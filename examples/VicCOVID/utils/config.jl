@@ -1,4 +1,4 @@
-include("./gaussianprocesses.jl")
+include("../../utils/gaussianprocesses.jl")
 
 function setenvironment!(config)
     if "env" in keys(config) && "blas_num_threads" in keys(config["env"])
@@ -128,7 +128,6 @@ function makemodel(config)
             push!(param_seq.seq, mtbpparams)
         end
     end
-    
     return model, param_seq
 end
 
@@ -289,7 +288,7 @@ function makeprior(config)
     elseif config["inference"]["prior_parameters"]["R_0"]["type"]=="gaussian_processes"
         if config["inference"]["prior_parameters"]["R_0"]["covariance_function"]=="exponential"
             cov_fun = ExponentialCovarianceFunction(
-                config["inference"]["prior_parameters"]["R_0"]["sigma"],
+                config["inference"]["prior_parameters"]["R_0"]["sigma"]^2,
                 config["inference"]["prior_parameters"]["R_0"]["ell"]
             )
             timestamps = Matrix(reshape(Float64.(config["model"]["stateprocess"]["params"]["timestamps"]), 1, :))
@@ -297,7 +296,7 @@ function makeprior(config)
             R0prior = GaussianProcess(timestamps, mu, cov_fun)
         elseif config["inference"]["prior_parameters"]["R_0"]["covariance_function"]=="squared_exponential"
             cov_fun = SquaredExponentialCovarianceFunction(
-                config["inference"]["prior_parameters"]["R_0"]["sigma"],
+                config["inference"]["prior_parameters"]["R_0"]["sigma"]^2,
                 config["inference"]["prior_parameters"]["R_0"]["ell"]
             )
             timestamps = Matrix(reshape(Float64.(config["model"]["stateprocess"]["params"]["timestamps"]), 1, :))
@@ -308,6 +307,7 @@ function makeprior(config)
         end
         if config["inference"]["prior_parameters"]["R_0"]["transform"]=="log"
             cache = zeros(Float64, length(timestamps))
+            gpmemcache = gp_logpdf_memcache(R0prior, cache)
             prior_logpdf = (params) -> begin
                 if any(p -> p <= zero(p), params)
                     return -Inf
@@ -319,36 +319,26 @@ function makeprior(config)
                 for i in Iterators.drop(eachindex(params), length(const_prior_dists))
                     cache[i-length(const_prior_dists)] = log(params[i])
                 end
-                val += logpdf(R0prior, cache)
+                val += logpdf(R0prior, cache, gpmemcache)
+                val -= sum(cache)
                 return val
             end
-        elseif config["inference"]["prior_parameters"]["R_0"]["transform"]=="sqrt"
+        elseif config["inference"]["prior_parameters"]["R_0"]["transform"]=="none"
             cache = zeros(Float64, length(timestamps))
+            gpmemcache = gp_logpdf_memcache(R0prior, cache)
             prior_logpdf = (params) -> begin
-                if any(p -> p <= zero(p), params)
-                    return -Inf
-                end
                 val = zero(eltype(params))
                 for i in eachindex(const_prior_dists)
                     val += logpdf(const_prior_dists[i], params[i])
                 end
                 for i in Iterators.drop(eachindex(params), length(const_prior_dists))
-                    cache[i-length(const_prior_dists)] = sqrt(params[i])
+                    cache[i-length(const_prior_dists)] = params[i]
                 end
-                val += logpdf(R0prior, cache)
+                val += logpdf(R0prior, cache, gpmemcache)
                 return val
             end
-        elseif config["inference"]["prior_parameters"]["R_0"]["transform"]=="none"
-            cache = zeros(Float64, length(timestamps))
-            prior_logpdf = (params) -> begin
-                val = zero(eltype(params))
-                for i in eachindex(const_prior_dists)
-                    val += logpdf(const_prior_dists[i], params[i])
-                end
-                cache .= params[(length(const_prior_dists)+1):end]
-                val += logpdf(R0prior, cache)
-                return val
-            end
+        else
+            error("Unkown R_0 prior specification, expected \"log\" or \"none\", got $(config["inference"]["prior_parameters"]["R_0"]["transform"])")
         end
     else
         error("Unknown prior R0 specififcation")

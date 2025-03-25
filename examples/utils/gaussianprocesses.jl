@@ -197,22 +197,37 @@ function GaussianProcess(x::AbstractMatrix, mu::AbstractVector, covfun::Covarian
     return GaussianProcess(x,mu,cov,covfun)
 end
 
-function logpdf(gp::GaussianProcess, y, 
-    cache1=similar(y, promote_type(eltype(y), eltype(gp.cov))),
-    cache2=similar(y, promote_type(eltype(y), eltype(gp.cov)))
-)
-    length(y) == size(gp.x, 2) || error("Data vector y must have the same length as gp.x")
+function gp_logpdf_memcache(gp, y)
+    return (
+        similar(y, promote_type(eltype(y), eltype(gp.cov))),
+        similar(y, promote_type(eltype(y), eltype(gp.cov)))
+    )
+end
+
+function chol_lower(a)
+    return a.uplo === 'L' ? LowerTriangular(a.factors) : LowerTriangular(a.factors')
+end
+
+function Distributions.logpdf(gp::GaussianProcess, y, cache=gp_logpdf_memcache(gp,y))
+    N = length(y)
+    if N != length(gp.mu)
+        error("Data vector y must have the same length as gp.x")
+    end
     # y'C⁻¹y = y'(LL')⁻¹y = (y'(L')⁻¹)(L⁻¹y) = ||(L⁻¹y)||
-    cache1 .= y - gp.mu
-    ldiv!(cache2, gp.cov.chol.L, cache1)
-    quad = sum(abs2, cache2)
+    cache[1] .= y .- gp.mu
+    lower = chol_lower(gp.cov.chol)
+    ldiv!(cache[2], lower, cache[1])
+    quad = zero(eltype(cache[2]))
+    for ci in cache[2]
+        quad += ci^2
+    end
     F = eltype(gp.x)
     halfsumlogdet = zero(eltype(gp.cov))
-    for i in axes(gp.cov.chol.L,1)
-        halfsumlogdet += log(gp.cov.chol.L[i,i])
+    for i in axes(lower,1)
+        halfsumlogdet += log(lower[i,i])
     end
-    return -F(0.5)*(length(y)*(log(F(2*pi))) + quad) - halfsumlogdet
-end
+    return -F(0.5)*(N*(log(F(2*pi))) + quad) - halfsumlogdet
+ end
 
 function Random.rand!(rng::AbstractRNG, gp::GaussianProcess, out::AbstractVector, cache=similar(out))
     randn!(rng, cache)
