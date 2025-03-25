@@ -244,4 +244,5 @@ function Random.rand!(rng::AbstractRNG, gp::GaussianProcess, out::AbstractVector
     out .+= gp.mu
     return out
 end
+
 end
