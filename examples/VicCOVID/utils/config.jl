@@ -287,27 +287,27 @@ function makeprior(config)
         end
     elseif config["inference"]["prior_parameters"]["R_0"]["type"]=="gaussian_processes"
         if config["inference"]["prior_parameters"]["R_0"]["covariance_function"]=="exponential"
-            cov_fun = ExponentialCovarianceFunction(
+            cov_fun = GP.ExponentialCovarianceFunction(
                 config["inference"]["prior_parameters"]["R_0"]["sigma"]^2,
                 config["inference"]["prior_parameters"]["R_0"]["ell"]
             )
             timestamps = Matrix(reshape(Float64.(config["model"]["stateprocess"]["params"]["timestamps"]), 1, :))
             mu = config["inference"]["prior_parameters"]["R_0"]["mu"]
-            R0prior = GaussianProcess(timestamps, mu, cov_fun)
+            R0prior = GP.GaussianProcess(timestamps, mu, cov_fun)
         elseif config["inference"]["prior_parameters"]["R_0"]["covariance_function"]=="squared_exponential"
-            cov_fun = SquaredExponentialCovarianceFunction(
+            cov_fun = GP.SquaredExponentialCovarianceFunction(
                 config["inference"]["prior_parameters"]["R_0"]["sigma"]^2,
                 config["inference"]["prior_parameters"]["R_0"]["ell"]
             )
             timestamps = Matrix(reshape(Float64.(config["model"]["stateprocess"]["params"]["timestamps"]), 1, :))
             mu = config["inference"]["prior_parameters"]["R_0"]["mu"]
-            R0prior = GaussianProcess(timestamps, mu, cov_fun)
+            R0prior = GP.GaussianProcess(timestamps, mu, cov_fun)
         else 
             error("Unknown covariance function in config")
         end
         if config["inference"]["prior_parameters"]["R_0"]["transform"]=="log"
             cache = zeros(Float64, length(timestamps))
-            gpmemcache = gp_logpdf_memcache(R0prior, cache)
+            gpmemcache = GP.gp_logpdf_memcache(R0prior, cache)
             prior_logpdf = (params) -> begin
                 if any(p -> p <= zero(p), params)
                     return -Inf
@@ -319,13 +319,13 @@ function makeprior(config)
                 for i in Iterators.drop(eachindex(params), length(const_prior_dists))
                     cache[i-length(const_prior_dists)] = log(params[i])
                 end
-                val += logpdf(R0prior, cache, gpmemcache)
+                val += GP.logpdf(R0prior, cache, gpmemcache)
                 val -= sum(cache)
                 return val
             end
         elseif config["inference"]["prior_parameters"]["R_0"]["transform"]=="none"
             cache = zeros(Float64, length(timestamps))
-            gpmemcache = gp_logpdf_memcache(R0prior, cache)
+            gpmemcache = GP.gp_logpdf_memcache(R0prior, cache)
             prior_logpdf = (params) -> begin
                 val = zero(eltype(params))
                 for i in eachindex(const_prior_dists)
@@ -334,7 +334,7 @@ function makeprior(config)
                 for i in Iterators.drop(eachindex(params), length(const_prior_dists))
                     cache[i-length(const_prior_dists)] = params[i]
                 end
-                val += logpdf(R0prior, cache, gpmemcache)
+                val += GP.logpdf(R0prior, cache, gpmemcache)
                 return val
             end
         else

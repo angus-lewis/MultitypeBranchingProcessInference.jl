@@ -3,11 +3,6 @@ using Random
 using LinearAlgebra
 using MultitypeBranchingProcessInference
 using Distributions
-using PDMats
-using Random
-
-import Random.rand!
-import Distributions.logpdf
 
 include("./utils/config.jl")
 
