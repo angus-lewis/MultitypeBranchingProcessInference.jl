@@ -1,3 +1,4 @@
+# don't add these project-specific dependencies as all we need are the Project.toml files
 /KalmanFilters.jl/Manifest.toml
 /MetropolisHastings.jl/Manifest.toml
 /MultitypeBranchingProcesses.jl/Manifest.toml

@@ -1,70 +1,7 @@
 include("../../utils/gaussianprocesses.jl")
-
-function setenvironment!(config)
-    if "env" in keys(config) && "blas_num_threads" in keys(config["env"])
-        LinearAlgebra.BLAS.set_num_threads(config["env"]["blas_num_threads"])
-    end
-    return 
-end
-
-function makerng(seed)
-    rng = TaskLocalRNG()
-    Random.seed!(rng, seed)
-    return rng
-end
-
-function convertseirparamstorates(R_0, T_E, T_I, E_state_count, I_state_count)
-    # rate of symptom onset
-    delta = E_state_count/T_E
-    # rate of recovery
-    lambda = I_state_count/T_I
-    # rate of infection
-    beta = R_0/T_I
-    return delta, lambda, beta
-end
-
-function param_map!(
-    mtbpparams, 
-    E_state_count, 
-    I_state_count, 
-    seir_params, # R_0, T_E, T_I 
-    immigration, 
-)
-    R_0, T_E, T_I = seir_params
-    delta, lambda, beta = convertseirparamstorates(R_0, T_E, T_I, E_state_count, I_state_count)
-
-    # exposed individuals progress to infectious at rate delta
-    exposed_states = 1:E_state_count
-    for i in exposed_states
-        mtbpparams.rates[i] = delta
-    end
-    # Note: infection events are either observed or unobserved
-    # with a fixed probability. Hence the cdfs of exposed progeny 
-    # events is fixed and does not need to be updated
-
-    # infectious individuals create infections at rate beta and recover at rate lambda
-    infectious_states = (E_state_count+1):(E_state_count+I_state_count)
-    for i in infectious_states
-        mtbpparams.rates[i] = beta+lambda
-    end
-    mtbpparams.rates[end-1] = zero(eltype(mtbpparams.rates))
-    mtbpparams.rates[end] = sum(immigration)
-
-    p = beta/(beta+lambda)
-    one_ = one(eltype(mtbpparams.rates))
-    for i in infectious_states
-        mtbpparams.cdfs[i][1] = p
-        mtbpparams.cdfs[i][2] = one_
-    end
-
-    if iszero(mtbpparams.rates[end])
-        mtbpparams.cdfs[end] .= range(zero(eltype(mtbpparams.cdfs[end])), one(eltype(mtbpparams.cdfs[end])), length(immigration))
-    else
-        mtbpparams.cdfs[end] .= cumsum(immigration)
-        mtbpparams.cdfs[end] ./= mtbpparams.cdfs[end][end]
-    end
-    return mtbpparams
-end
+include("../../utils/loglikelihoodutils.jl")
+include("../../utils/generalutils.jl")
+include("../../utils/mhutils.jl")
 
 function makemodel(config)
     seirconfig = config["model"]["stateprocess"]["params"]
@@ -131,57 +68,6 @@ function makemodel(config)
     return model, param_seq
 end
 
-function read_observations(filename)
-    observations = open(filename, "r") do io
-        nlines = countlines(io)
-        seekstart(io)
-
-        lineno = 1
-        # skip header line
-        readline(io)
-        
-        observations = Vector{Float64}[]
-        while !eof(io)
-            lineno += 1
-            observation_string = readline(io)
-            obs = [parse(Float64, observation_string)]
-            push!(observations, obs)
-        end
-        if lineno != nlines
-            error("Bad observations file")
-        end
-        observations
-    end
-    return observations
-end
-
-function reset_obs_state_iter_setup!(
-    f::HybridFilterApproximation,
-    model, dt, observation, iteration, use_prev_iter_params,
-)
-    return 
-end
-function reset_obs_state_iter_setup!(
-    f::MTBPKalmanFilterApproximation,
-    model, dt, observation, iteration, use_prev_iter_params,
-)
-    reset_idx = obs_state_idx(model.stateprocess)
-    kf = f.kalmanfilter
-    kf.state_estimate[reset_idx] = zero(eltype(kf.state_estimate))
-    kf.state_estimate_covariance[:, reset_idx] .= zero(eltype(kf.state_estimate_covariance))
-    kf.state_estimate_covariance[reset_idx, :] .= zero(eltype(kf.state_estimate_covariance))
-    return 
-end
-function reset_obs_state_iter_setup!(
-    f::ParticleFilterApproximation,
-    model, dt, observation, iteration, use_prev_iter_params,
-)
-    reset_idx = obs_state_idx(model.stateprocess)
-    return for particle in f.store.store
-        particle[reset_idx] = zero(eltype(particle))
-    end
-end
-
 function makeloglikelihood(observations, config)
     model, param_seq = makemodel(config)
     if config["inference"]["likelihood_approx"]["method"] == "hybrid"
@@ -219,7 +105,7 @@ function makeloglikelihood(observations, config)
     end
 
     seirconfig = config["model"]["stateprocess"]["params"]
-    function llparam_map!(mtbpparams, param)
+    llparam_map! = (mtbpparams, param) -> begin
         return param_map!(
             mtbpparams, 
             seirconfig["E_state_count"], 
@@ -344,30 +230,4 @@ function makeprior(config)
         error("Unknown prior R0 specififcation")
     end
     return prior_logpdf
-end
-
-function makeproposal(config)
-    proposalconfig = config["inference"]["proposal_parameters"]
-    mu = proposalconfig["mean"]
-    sigma = reshape(proposalconfig["cov"], length(mu), length(mu))
-    return MutableMvNormal(mu, sigma)
-end
-
-function makemhconfig(config)
-    mh_rng = makerng(config["inference"]["mh_config"]["seed"])
-    mh_config = MHConfig(
-        config["inference"]["mh_config"]["buffer_size"],
-        config["inference"]["mh_config"]["outfilename"],
-        config["inference"]["mh_config"]["max_iters"],
-        config["inference"]["mh_config"]["nparams"],
-        config["inference"]["mh_config"]["max_time_sec"],
-        config["inference"]["mh_config"]["init_sample"],
-        config["inference"]["mh_config"]["verbose"],
-        config["inference"]["mh_config"]["infofilename"],
-        config["inference"]["mh_config"]["adaptive"],
-        config["inference"]["mh_config"]["nadapt"],
-        config["inference"]["mh_config"]["adapt_cov_scale"],
-        config["inference"]["mh_config"]["continue"],
-    )
-    return mh_rng, mh_config
 end

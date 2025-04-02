@@ -120,17 +120,17 @@ function adaptmaybe!(symmetric_proposal_distribution, mh_config, info_io, sample
     return 
 end
 
-function calc_log_accept_ratio_contribution(sample, loglikelihood_fn, prior_logpdf)
+function calc_log_accept_ratio(sample, loglikelihood_fn, prior_logpdf)
     logpdf_prior = prior_logpdf(sample)
     if isinf(logpdf_prior)
         # skip expensive likelihood evaluation when logpdf_prior = -Inf
         loglikelihood_value = logpdf_prior
-        log_accept_ratio_contrib = logpdf_prior
+        log_accept_ratio = logpdf_prior
     else
         loglikelihood_value = loglikelihood_fn(sample)
-        log_accept_ratio_contrib = loglikelihood_value + logpdf_prior
+        log_accept_ratio = loglikelihood_value + logpdf_prior
     end
-    return log_accept_ratio_contrib, loglikelihood_value
+    return log_accept_ratio, loglikelihood_value
 end
 
 function read_init_sample_from_end_of_file!(mh_config)
@@ -178,13 +178,13 @@ function metropolis_hastings(rng::AbstractRNG, loglikelihood_fn, prior_logpdf_fn
     check_init_params(current_sample, prior_logpdf_fn)
     setstate!(symmetric_proposal_distribution, current_sample)
     infiniteloglikelihoodscount = 0
-    current_log_accept_ratio_contrib, current_loglikelihood_value = 
-        calc_log_accept_ratio_contribution(current_sample, loglikelihood_fn, prior_logpdf_fn)
+    current_log_accept_ratio, current_loglikelihood_value = 
+        calc_log_accept_ratio(current_sample, loglikelihood_fn, prior_logpdf_fn)
     infiniteloglikelihoodscount += isinf(current_loglikelihood_value)
 
     # allocate space for samples
     proposed_sample = Vector{eltype(mh_config.init_sample)}(undef, mh_config.nparams)
-    samples_buffer = SamplesBuffer(mh_config.init_sample, mh_config.samples_write_buffer_size, current_log_accept_ratio_contrib)
+    samples_buffer = SamplesBuffer(mh_config.init_sample, mh_config.samples_write_buffer_size, current_log_accept_ratio)
 
     open(mh_config.info_file, "a") do info_io
     open(mh_config.samples_write_file, "a") do samples_io
@@ -202,17 +202,17 @@ function metropolis_hastings(rng::AbstractRNG, loglikelihood_fn, prior_logpdf_fn
         while !timeout(start_time_sec, mh_config.max_time_sec) && !maxitersreached(samples_count, maxsamples)
             # propose
             proposed_sample .= rand(rng, symmetric_proposal_distribution)
-            proposed_log_accept_ratio_contrib, proposed_loglikelihood_value = 
-                calc_log_accept_ratio_contribution(proposed_sample, loglikelihood_fn, prior_logpdf_fn)
+            proposed_log_accept_ratio, proposed_loglikelihood_value = 
+                calc_log_accept_ratio(proposed_sample, loglikelihood_fn, prior_logpdf_fn)
             infiniteloglikelihoodscount += isinf(proposed_loglikelihood_value)
-            log_accept_ratio = proposed_log_accept_ratio_contrib - current_log_accept_ratio_contrib
+            log_accept_ratio = proposed_log_accept_ratio - current_log_accept_ratio
             
             # accept/reject
             samples_count += 1
             if log(rand(rng)) <= log_accept_ratio
-                current_sample = addsample!(samples_buffer, proposed_sample, proposed_log_accept_ratio_contrib)
+                current_sample = addsample!(samples_buffer, proposed_sample, proposed_log_accept_ratio)
                 setstate!(symmetric_proposal_distribution, current_sample)
-                current_log_accept_ratio_contrib, current_loglikelihood_value = proposed_log_accept_ratio_contrib, proposed_loglikelihood_value
+                current_log_accept_ratio, current_loglikelihood_value = proposed_log_accept_ratio, proposed_loglikelihood_value
             else 
                 repeatsample!(samples_buffer)
             end
