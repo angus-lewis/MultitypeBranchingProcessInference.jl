@@ -1,70 +1,12 @@
-function setenvironment!(config)
-    if "env" in keys(config) && "blas_num_threads" in keys(config["env"])
-        LinearAlgebra.BLAS.set_num_threads(config["env"]["blas_num_threads"])
-    end
-    return 
-end
+include("../../utils/loglikelihoodutils.jl")
+include("../../utils/generalutils.jl")
+include("../../utils/mhutils.jl")
 
 function pathtodailycases(path, cases_idx)
     cumulative_cases = [[state[cases_idx]] for state in path]
     daily_cases = diff(cumulative_cases)
     cases = [[cumulative_cases[1]]; daily_cases]
     return cases
-end
-
-function param_map!(
-    mtbpparams, E_state_count, I_state_count, seir_params, immigration, 
-    convert_to_rates=true
-)
-    if convert_to_rates
-        R_0, T_E, T_I = seir_params
-        # rate of symptom onset
-        delta = one(T_E)/T_E
-        # rate of recovery
-        lambda = one(T_I)/T_I
-        # rate of infection
-        beta = R_0*lambda
-    else 
-        delta, lambda, beta = seir_params
-    end
-
-    # exposed individuals progress to infectious at rate delta
-    exposed_states = 1:E_state_count
-    for i in exposed_states
-        mtbpparams.rates[i] = delta
-    end
-    # Note: infection events are either observed or unobserved
-    # with a fixed probability. Hence the cdfs of exposed progeny 
-    # events is fixed and does not need to be updated
-
-    # infectious individuals create infections at rate beta and recover at rate lambda
-    infectious_states = (E_state_count+1):(E_state_count+I_state_count)
-    for i in infectious_states
-        mtbpparams.rates[i] = beta+lambda
-    end
-    mtbpparams.rates[end-1] = zero(eltype(mtbpparams.rates))
-    mtbpparams.rates[end] = sum(immigration)
-
-    p = beta/(beta+lambda)
-    one_ = one(eltype(mtbpparams.rates))
-    for i in infectious_states
-        mtbpparams.cdfs[i][1] = p
-        mtbpparams.cdfs[i][2] = one_
-    end
-
-    if mtbpparams.rates[end] == zero(eltype(immigration))
-        mtbpparams.cdfs[end] .= range(zero(eltype(immigration)), one(eltype(immigration)), length(immigration))
-    else
-        mtbpparams.cdfs[end] .= cumsum(immigration)
-        mtbpparams.cdfs[end] ./= mtbpparams.cdfs[end][end]
-    end
-    return mtbpparams
-end
-
-function makerng(seed)
-    rng = Xoshiro()
-    Random.seed!(rng, seed)
-    return rng
 end
 
 function makemodel(config)
@@ -164,59 +106,6 @@ function makeprior(config)
         return val
     end
     return prior_logpdf
-end
-
-function makeproposal(config)
-    propconfig = config["inference"]["proposal_parameters"]
-    mu = propconfig["mean"]
-    sigma = reshape(propconfig["cov"], length(mu), length(mu))
-    return MutableMvNormal(mu, sigma)
-end
-
-function makemhconfig(config)
-    mh_rng = makerng(config["inference"]["mh_config"]["seed"])
-    mh_config = MHConfig(
-        config["inference"]["mh_config"]["buffer_size"],
-        config["inference"]["mh_config"]["outfilename"],
-        config["inference"]["mh_config"]["max_iters"],
-        config["inference"]["mh_config"]["nparams"],
-        config["inference"]["mh_config"]["max_time_sec"],
-        config["inference"]["mh_config"]["init_sample"],
-        config["inference"]["mh_config"]["verbose"],
-        config["inference"]["mh_config"]["infofilename"],
-        config["inference"]["mh_config"]["adaptive"],
-        config["inference"]["mh_config"]["nadapt"],
-        config["inference"]["mh_config"]["adapt_cov_scale"],
-        config["inference"]["mh_config"]["continue"],
-    )
-    return mh_rng, mh_config
-end
-
-function reset_obs_state_iter_setup!(
-    f::HybridFilterApproximation,
-    model, dt, observation, iteration, use_prev_iter_params,
-)
-    return 
-end
-function reset_obs_state_iter_setup!(
-    f::MTBPKalmanFilterApproximation,
-    model, dt, observation, iteration, use_prev_iter_params,
-)
-    reset_idx = obs_state_idx(model.stateprocess)
-    kf = f.kalmanfilter
-    kf.state_estimate[reset_idx] = zero(eltype(kf.state_estimate))
-    kf.state_estimate_covariance[:, reset_idx] .= zero(eltype(kf.state_estimate_covariance))
-    kf.state_estimate_covariance[reset_idx, :] .= zero(eltype(kf.state_estimate_covariance))
-    return 
-end
-function reset_obs_state_iter_setup!(
-    f::ParticleFilterApproximation,
-    model, dt, observation, iteration, use_prev_iter_params,
-)
-    reset_idx = obs_state_idx(model.stateprocess)
-    return for particle in f.store.store
-        particle[reset_idx] = zero(eltype(particle))
-    end
 end
 
 function makeloglikelihood(model, param_seq, observations, config)

@@ -245,4 +245,51 @@ function Random.rand!(rng::AbstractRNG, gp::GaussianProcess, out::AbstractVector
     return out
 end
 
+function Random.rand!(rng::AbstractRNG, gp2::GaussianProcess, y2, x1::Matrix, mu1::AbstractVector, out::AbstractVector, 
+    cache::Tuple=(similar(out), similar(out), similar(gp2.cov.factors, size(x1, 2), size(gp2.x, 2)))
+)
+    gp1 = GaussianProcess(x1, mu1, gp2.covfun)
+    sigma12 = cache[3]
+    for i in eachindex(axes(x1, 2))
+        for j in eachindex(axes(gp2.x, 2))
+            sigma12[i,j] = gp2.covfn(x1[:,i], gp2.x[:,j])
+        end
+    end
+    return rand!(rng, gp2, y2, sigma12, gp1, out, cache)
 end
+
+function Random.rand!(rng::AbstractRNG, 
+    gp2::GaussianProcess, y2, sigma12::AbstractMatrix, # adjustment for conditioning
+    gp1::GaussianProcess, out::AbstractVector, # unconditional distribution of new observations
+    cache::Tuple=(
+        similar(out, size(sigma12, 2)), similar(out, size(sigma12, 2)), similar(out, size(sigma12, 2)), 
+        similar(out, size(sigma12, 1)), similar(out, size(sigma12, 1))
+    )
+)
+    # Z = Z₁ + Z₂ where 
+    # Z₁ ~ GP1 ≡ N(μ₁, Σ₁₁) and 
+    # Z₂ ~ N(Σ₁₂Σ₂₂⁻¹(y₂ - μ₂), Σ₁₂Σ₂₂⁻¹Σ₂₁)), 
+    # so Z₂ = Σ₁₂Σ₂₂⁻¹(y₂ - μ₂) + Σ₁₂(L₂')⁻¹ Z₀
+    #       = Σ₁₂(Σ₂₂⁻¹(y₂ - μ₂) + (L₂')⁻¹ Z₀)
+    # where Z₀ ~ N(0,I)
+
+    # simulate Z₂
+    # Z₀
+    randn!(rng, cache[1])
+    # (L₂')⁻¹ Z₀
+    ldiv!(cache[2], gp2.cov.chol.U, cache[1])
+    # Σ₂₂⁻¹(y₂ - μ₂)
+    cache[1] .= y2 .- gp2.mu
+    ldiv!(cache[3], gp2.cov.chol, cache[1])
+    # (Σ₂₂⁻¹(y₂ - μ₂) + (L₂')⁻¹ Z₀)
+    cache[3] .+= cache[2]
+    # Z₂ = Σ₁₂(Σ₂₂⁻¹(y₂ - μ₂) + (L₂')⁻¹ Z₀)
+    mul!(cache[4], sigma12, cache[3])
+
+    # simulate Z₁
+    rand!(rng, gp1, out, cache[5])
+    out .+= cache[4]
+    return out
+end
+
+end # module GP
