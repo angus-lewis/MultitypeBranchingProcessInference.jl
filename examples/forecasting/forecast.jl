@@ -1,13 +1,13 @@
 using YAML
 using MultitypeBranchingProcessInference
-using Random 
+using StatsPlots
 
 include("./src/forecasting.jl")
 
 function main(argv)
     argc = length(argv)
     if argc != 1
-        error("inference.jl program expects 1 argument \
+        error("forecast.jl program expects 1 argument \
                \n    - config file name.")
     end
 
@@ -29,35 +29,35 @@ function main(argv)
         config["model"]["fixed_parameters"]["initial_state"],
         observations,
     )
+    seir = epidemicmodel.model.stateprocess
 
-    prior_dist = makeprior(
+    r0prior = makepriordist(
         config["model"]["inferred_parameters"]["R_0"]["prior"]["mu"],
         config["model"]["inferred_parameters"]["R_0"]["prior"]["covariance_function_type"],
         config["model"]["inferred_parameters"]["R_0"]["prior"]["covariance_function_parameters"],
         config["model"]["inferred_parameters"]["R_0"]["changepoints"],
-        config["model"]["inferred_parameters"]["R_0"]["prior"]["transform"]
     )
 
-    proposal_distribuion = makeforecastingproposal(config)
-    mh_rng, mh_config = makemhconfig(config)
+    forecastrng = makerng(config["forecast"]["seed"])
+    forecasttimes = Matrix{Float64}(reshape(config["forecast"]["times"], 1, :))
+    forecastR0mu = config["forecast"]["R_0"]["mu"]
 
-    MetropolisHastings.skip_binary_array_file_header(mh_config.model_info_io, 2)
+    nforecastsims = config["forecast"]["nsims"]
+    
+    r0sampled, statessampled = sample_posteriors(forecastrng, nforecastsims, config, getntypes(seir))
 
-    @time nsamples = MetropolisHastings.metropolis_hastings(
-        mh_rng, epidemicmodel, prior_dist, proposal_distribuion, mh_config,
-    )
+    transform = config["model"]["inferred_parameters"]["R_0"]["prior"]["transform"]
+    r0forecast = forecast_R0(forecastrng, r0prior, r0sampled, forecasttimes, forecastR0mu, transform)
+    
+    cases = forecastcases(forecastrng, epidemicmodel, last(observations).time, forecasttimes, statessampled, r0forecast)
 
-    MetropolisHastings.write_binary_array_file_header(
-        mh_config.model_info_io, 
-        (length(epidemicmodel.info_cache), nsamples)
-    )
+    doweffect = config["model"]["fixed_parameters"]["observation_model"]["scale_factors"]
+    apply_dow_effect!(cases, forecasttimes, doweffect)
 
-    if mh_config.model_info_io !== devnull && mh_config.model_info_io !== stdout
-        close(mh_config.model_info_io)
-    end
-
-    println()
-    return
+    cases .= round.(cases)
+    
+    write_forecasts(config["forecast"]["outfilename"], forecasttimes, cases)
+    return raw_observations, t, cases, forecasttimes, r0forecast, statessampled, r0sampled
 end
 
-main(ARGS)
+raw_observations, t, cases, forecasttimes, r0forecasts, statesampled, r0sampled = main(ARGS)
