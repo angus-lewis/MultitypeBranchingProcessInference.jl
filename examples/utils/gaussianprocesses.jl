@@ -4,7 +4,7 @@ using PDMats
 using Random
 using LinearAlgebra
 
-import Random.rand!
+import Random: rand, rand!
 import Distributions.logpdf
 
 abstract type CovarianceFunction{F<:AbstractFloat} end
@@ -245,50 +245,44 @@ function Random.rand!(rng::AbstractRNG, gp::GaussianProcess, out::AbstractVector
     return out
 end
 
-function Random.rand!(rng::AbstractRNG, gp2::GaussianProcess, y2, x1::Matrix, mu1::AbstractVector, out::AbstractVector, 
-    cache::Tuple=(similar(out), similar(out), similar(gp2.cov.factors, size(x1, 2), size(gp2.x, 2)))
-)
-    gp1 = GaussianProcess(x1, mu1, gp2.covfun)
-    sigma12 = cache[3]
-    for i in eachindex(axes(x1, 2))
-        for j in eachindex(axes(gp2.x, 2))
-            sigma12[i,j] = gp2.covfn(x1[:,i], gp2.x[:,j])
+function Random.rand(rng::AbstractRNG, gp::GaussianProcess, y::VM, x::Matrix, 
+    mu::AbstractVector=zeros(eltype(y), size(x,2)), 
+    out::VM=similar(y, size(x,2), size(y,2))) where {VM<:AbstractVecOrMat}
+
+    @assert size(y,2) == size(out,2)
+    @assert size(x,2) == size(mu,1)
+    @assert size(y,1) == size(gp.mu,1)
+    new_gp = GaussianProcess(x, mu, gp.covfun)
+    covarainces = similar(gp.cov.mat, size(x, 2), size(gp.x, 2))
+    for i in eachindex(axes(x, 2))
+        for j in eachindex(axes(gp.x, 2))
+            covarainces[i,j] = gp.covfun(x[:,i], gp.x[:,j])
         end
     end
-    return rand!(rng, gp2, y2, sigma12, gp1, out, cache)
+    return rand(rng, gp, y, covarainces, new_gp, out)
 end
 
-function Random.rand!(rng::AbstractRNG, 
-    gp2::GaussianProcess, y2, sigma12::AbstractMatrix, # adjustment for conditioning
-    gp1::GaussianProcess, out::AbstractVector, # unconditional distribution of new observations
-    cache::Tuple=(
-        similar(out, size(sigma12, 2)), similar(out, size(sigma12, 2)), similar(out, size(sigma12, 2)), 
-        similar(out, size(sigma12, 1)), similar(out, size(sigma12, 1))
-    )
-)
-    # Z = Z₁ + Z₂ where 
-    # Z₁ ~ GP1 ≡ N(μ₁, Σ₁₁) and 
-    # Z₂ ~ N(Σ₁₂Σ₂₂⁻¹(y₂ - μ₂), Σ₁₂Σ₂₂⁻¹Σ₂₁)), 
-    # so Z₂ = Σ₁₂Σ₂₂⁻¹(y₂ - μ₂) + Σ₁₂(L₂')⁻¹ Z₀
-    #       = Σ₁₂(Σ₂₂⁻¹(y₂ - μ₂) + (L₂')⁻¹ Z₀)
-    # where Z₀ ~ N(0,I)
+function Random.rand(rng::AbstractRNG, 
+    gp::GaussianProcess, y::VM, covarainces::AbstractMatrix, # adjustment for conditioning
+    new_gp::GaussianProcess, out::VM=similar(y, size(x,2), size(y,2)), # unconditional distribution of new observations
+) where {VM<:AbstractVecOrMat}
+    @assert size(y,2) == size(out,2)
+    @assert size(new_gp.x,2) == size(covarainces,1)
+    @assert size(covarainces,2) == size(gp.x, 2)
+    @assert size(y,1) == size(gp.mu, 1)
 
-    # simulate Z₂
-    # Z₀
-    randn!(rng, cache[1])
-    # (L₂')⁻¹ Z₀
-    ldiv!(cache[2], gp2.cov.chol.U, cache[1])
-    # Σ₂₂⁻¹(y₂ - μ₂)
-    cache[1] .= y2 .- gp2.mu
-    ldiv!(cache[3], gp2.cov.chol, cache[1])
-    # (Σ₂₂⁻¹(y₂ - μ₂) + (L₂')⁻¹ Z₀)
-    cache[3] .+= cache[2]
-    # Z₂ = Σ₁₂(Σ₂₂⁻¹(y₂ - μ₂) + (L₂')⁻¹ Z₀)
-    mul!(cache[4], sigma12, cache[3])
+    tmp = (covarainces / gp.cov)
+    mu = new_gp.mu .+ tmp*(y.-gp.mu)
+    sigma = new_gp.cov - tmp*covarainces'
+    # ensure Hermitian
+    sigma = sigma + sigma'
+    sigma ./= 2
 
-    # simulate Z₁
-    rand!(rng, gp1, out, cache[5])
-    out .+= cache[4]
+    Z = MvNormal(zeros(size(sigma,1)), sigma)
+    for i in axes(y,2)
+        Z.μ .= mu[:,i]
+        out[:,i] .= rand(rng, Z)
+    end
     return out
 end
 
