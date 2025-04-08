@@ -17,10 +17,13 @@ function main(argv)
     t = config["data"]["first_observation_time"] .+ (0:(length(raw_observations)-1))
     observations = Observations(t, raw_observations)
 
+    dow_prior = config["model"]["fixed_parameters"]["observation_model"]["day_of_week_effect_prior"]
+    dow_effect = estimate_dow_effect(vcat(raw_observations...), 0, dow_prior, length(dow_prior))
+
     epidemicmodel = makemodel(
         config["model"]["fixed_parameters"]["T_E"],
         config["model"]["fixed_parameters"]["T_I"],
-        config["model"]["fixed_parameters"]["observation_model"]["scale_factors"],
+        dow_effect,
         config["model"]["fixed_parameters"]["observation_model"]["variance"],
         config["model"]["inferred_parameters"]["R_0"]["changepoints"],
         config["model"]["inferred_parameters"]["R_0"]["initial_values"],

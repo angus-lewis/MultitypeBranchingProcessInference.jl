@@ -40,6 +40,8 @@ function forecastcases(rng, model, lastdatatime, forecasttimes, initialstatesamp
     statemean = zeros(paramtype(moments_operator), getntypes(seir))
     statecov = zeros(paramtype(moments_operator), getntypes(seir), getntypes(seir))
 
+    isimmigrationmodel = model.immigration !== nothing
+
     for n in axes(r0forecasts, 2)
         prevstatesamp .= initialstatesamples[:,n]
         prevstatesamp .= round.(initialstatesamples[:,n])
@@ -59,9 +61,11 @@ function forecastcases(rng, model, lastdatatime, forecasttimes, initialstatesamp
             variance_covariance!(statecov, moments_operator, prevstatesamp)
             ensure_symmetric!(statecov)
 
-            Z = MvNormal(statemean[1:end-1], statecov[1:end-1,1:end-1])
-            @views statesamp[1:end-1] .= rand(rng, Z)
-            statesamp[end] = zero(eltype(statesamp))
+            Z = MvNormal(statemean[1:end-isimmigrationmodel], statecov[1:end-isimmigrationmodel,1:end-isimmigrationmodel])
+            @views statesamp[1:end-isimmigrationmodel] .= rand(rng, Z)
+            if isimmigrationmodel
+                statesamp[end] = zero(eltype(statesamp))
+            end
             
             statesamp[statesamp .< zero(eltype(statesamp))] .= zero(eltype(statesamp))
             
@@ -107,7 +111,7 @@ function sample_posteriors(rng, nsamples, config, ntypes)
 
     # samples states
     statessampled = similar(statemeanssampled)
-    isimmigrationmodel = config["immigration_rate"]!="nothing"
+    isimmigrationmodel = config["model"]["fixed_parameters"]["immigration_rate"]!="nothing"
     for i in axes(statessampled, 2)
         @views mu = statemeanssampled[:,i]
         @views cov = reshape(statecovsampled[:,i], ntypes, ntypes)
@@ -115,9 +119,11 @@ function sample_posteriors(rng, nsamples, config, ntypes)
 
         # ignore last element as it is immigration
         @views Z = MvNormal(mu[1:end-isimmigrationmodel], cov[1:end-isimmigrationmodel, 1:end-isimmigrationmodel])
-        statessampled[1:end-1,i] .= rand(rng, Z)
+        statessampled[1:end-isimmigrationmodel,i] .= rand(rng, Z)
     end
-    statessampled[end,:] .= 0
+    if isimmigrationmodel
+        statessampled[end,:] .= 0
+    end
 
     statessampled .= round.(statessampled)
 
