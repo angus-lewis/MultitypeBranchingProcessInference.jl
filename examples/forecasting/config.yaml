@@ -7,7 +7,10 @@ model:
     I_state_count: 1
     T_E: 4.0
     T_I: 4.0
-    initial_state: [2, 2, 0, 0]
+    notification_rate: nothing # 1.0
+    observation_probability: 1.0
+    initial_state: [2, 2, 0]
+    immigration_rate: nothing # [0.0, 0.0]
     observation_model:
       # ratio of reports on a day of the week to average reports per day
       scale_factors: [1.0627884989711363, 1.0141260219120183, 0.960402647238752, 1.0729102941994326, 0.8805961848617986, 0.9339302597185918, 1.0752460930982704]

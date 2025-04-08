@@ -17,13 +17,15 @@ function makemodel(config)
         first(seirconfig["exposed_stage_chage_rate"]), 
         first(seirconfig["infectious_stage_chage_rate"]), 
         seirconfig["observation_probability"], 
-        seirconfig["immigration_rate"],
+        nothing, # notification rate
+        seirconfig["immigration_rate"]==="nothing" ? nothing : seirconfig["immigration_rate"],
         config["model"]["stateprocess"]["initial_state"],
     )
 
     obs_config = config["model"]["observation"]
     obs_operator = zeros(1, getntypes(seir))
-    obs_operator[obs_state_idx(seir)] = 1.0
+    obs_state_idx = seirconfig["E_state_count"] + seirconfig["I_state_count"] + 1
+    obs_operator[obs_state_idx] = 1.0
     obs_model = LinearGaussianObservationModel(
         obs_operator, obs_config["mean"], 
         reshape(obs_config["cov"], 1, 1)
@@ -35,7 +37,7 @@ function makemodel(config)
     if seirconfig["is_time_homogeneous"]
         mtbpparams = MTBPParams(seir)
         beta, lambda, delta = seirconfig["infection_rate"], seirconfig["infectious_stage_chage_rate"], seirconfig["exposed_stage_chage_rate"]
-        immigration = seirconfig["immigration_rate"]
+        immigration = seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"]
         param_map!(
             mtbpparams, 
             seirconfig["E_state_count"], seirconfig["I_state_count"], 
@@ -49,7 +51,7 @@ function makemodel(config)
             beta = seirconfig["infection_rate"][i]
             lambda = seirconfig["infectious_stage_chage_rate"][i]
             delta = seirconfig["exposed_stage_chage_rate"][i]
-            immigration = seirconfig["immigration_rate"]
+            immigration = seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"]
             param_map!(
                 mtbpparams, 
                 seirconfig["E_state_count"], seirconfig["I_state_count"], 
@@ -116,7 +118,7 @@ function makeloglikelihood(model, param_seq, observations, config)
         switch_rng = makerng(config["inference"]["likelihood_approx"]["switch"]["seed"])
         switch_threshold = config["inference"]["likelihood_approx"]["switch"]["threshold"]
         
-        randomstatesidx = getrandomstateidx(model.stateprocess)
+        randomstatesidx = 1:(getntypes(model.stateprocess) - 2)
 
         approx = HybridFilterApproximation(
             model, pf_rng, switch_rng, nparticles, switch_threshold, randomstatesidx
@@ -146,9 +148,16 @@ function makeloglikelihood(model, param_seq, observations, config)
     function llparam_map!(mtbpparams, param)
         return param_map!(
             mtbpparams, seirconfig["E_state_count"], seirconfig["I_state_count"], 
-            param, seirconfig["immigration_rate"], true
+            param, seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"], true
         )
     end
+
+    reset_idx = seirconfig["E_state_count"] + seirconfig["I_state_count"] + 1
+    reset_obs_state_iter_setup! = (f, model, dt, observation, iteration, use_prev_iter_params) -> begin
+        reset_state_iter_setup!(f, model, dt, observation, iteration, use_prev_iter_params, reset_idx)
+        return
+    end
+
     if "intervention" in keys(config["inference"]["prior_parameters"])
         pre_intervention_params = zeros(paramtype(model), 3)
         post_intervention_params = zeros(paramtype(model), 3)

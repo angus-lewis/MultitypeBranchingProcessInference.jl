@@ -58,7 +58,7 @@ function MHConfig(
         end
     else
         if isfile(samples_file) || isfile(info_file) || isfile(model_info_file)
-            error("MH IO file(s) already exist\n    $(samples_file)\n    $(info_file).")
+            error("MH IO file(s) already exist\n    $(samples_file)\n    $(info_file)\n    $(model_info_file).")
         end
     end
     samples_io = open(samples_file, "a")

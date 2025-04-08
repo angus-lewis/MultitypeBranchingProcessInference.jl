@@ -12,9 +12,9 @@ model:
       T_E: [5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]
       T_I: [8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0]
       observation_probability: 0.8
-      immigration_rate: [0.0, 0.0, 0.0, 0.0]
+      immigration_rate: nothing # [0.0, 0.0, 0.0, 0.0]
     # [E, E, I, I, O, R]
-    initial_state: [10, 0, 0, 0, 0, 0]
+    initial_state: [10, 0, 0, 0, 0]
   observation:
     mean: [0.0]
     cov: [1.0]

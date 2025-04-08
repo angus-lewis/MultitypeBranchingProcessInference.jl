@@ -38,12 +38,7 @@ export MultitypeBranchingProcess,
     simulate!
 
 export SEIR, 
-    PoissonProcess,
-    obs_state_idx,
-    immigration_state_idx,
-    getconststatecount,
-    getrandomstatecount,
-    getrandomstateidx
+    PoissonProcess
 
 include("typedistributions.jl")
 include("moments.jl")

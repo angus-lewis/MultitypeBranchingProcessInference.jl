@@ -16,13 +16,15 @@ function makemodel(config)
         delta, 
         lambda,
         seirconfig["observation_probability"], 
-        seirconfig["immigration_rate"],
+        nothing, # notification rate
+        seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"],
         config["model"]["stateprocess"]["initial_state"],
     )
 
     obs_config = config["model"]["observation"]
     obs_operator = zeros(1, getntypes(seir))
-    obs_operator[obs_state_idx(seir)] = 1.0
+    obs_state_idx = seirconfig["E_state_count"] + seirconfig["I_state_count"] + 1
+    obs_operator[obs_state_idx] = 1.0
     obs_model = LinearGaussianObservationModel(
         obs_operator, obs_config["mean"], 
         reshape(obs_config["cov"], 1, 1)
@@ -37,7 +39,7 @@ function makemodel(config)
         R_0 = seirconfig["R_0"]
         T_E = seirconfig["T_E"]
         T_I = seirconfig["T_I"]
-        immigration = seirconfig["immigration_rate"]
+        immigration = seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"]
         param_map!(
             mtbpparams, 
             seirconfig["E_state_count"], 
@@ -53,7 +55,7 @@ function makemodel(config)
             R_0 = seirconfig["R_0"][i]
             T_E = seirconfig["T_E"][i]
             T_I = seirconfig["T_I"][i]
-            immigration = seirconfig["immigration_rate"]
+            immigration = seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"]
             param_map!(
                 mtbpparams, 
                 seirconfig["E_state_count"], 
@@ -70,29 +72,7 @@ end
 
 function makeloglikelihood(observations, config)
     model, param_seq = makemodel(config)
-    if config["inference"]["likelihood_approx"]["method"] == "hybrid"
-        pf_rng = makerng(config["inference"]["likelihood_approx"]["particle_filter"]["seed"])
-        nparticles = config["inference"]["likelihood_approx"]["particle_filter"]["nparticles"]
-
-        switch_rng = makerng(config["inference"]["likelihood_approx"]["switch"]["seed"])
-        switch_threshold = config["inference"]["likelihood_approx"]["switch"]["threshold"]
-        
-        randomstatesidx = getrandomstateidx(model.stateprocess)
-
-        approx = HybridFilterApproximation(
-            model, pf_rng, switch_rng, nparticles, switch_threshold, randomstatesidx
-        )
-    elseif config["inference"]["likelihood_approx"]["method"] == "particle_filter"
-        pf_rng = makerng(config["inference"]["likelihood_approx"]["particle_filter"]["seed"])
-        nparticles = config["inference"]["likelihood_approx"]["particle_filter"]["nparticles"]
-        ismultithreadded = config["inference"]["likelihood_approx"]["particle_filter"]["multithreadding"]
-
-        approx = ParticleFilterApproximation(model, pf_rng, nparticles, ismultithreadded)
-
-        if "switch" in keys(config["inference"]["likelihood_approx"])
-            @warn "Unused \"switch\" params in config with approximation method \"particle_filter\"."
-        end
-    elseif config["inference"]["likelihood_approx"]["method"] == "kalman_filter"
+    if config["inference"]["likelihood_approx"]["method"] == "kalman_filter"
         approx = MTBPKalmanFilterApproximation(model)
         if "switch" in keys(config["inference"]["likelihood_approx"])
             @warn "Unused \"switch\" params in config with approximation method \"kalman_filter\"."
@@ -111,12 +91,18 @@ function makeloglikelihood(observations, config)
             seirconfig["E_state_count"], 
             seirconfig["I_state_count"], 
             param, 
-            seirconfig["immigration_rate"], 
+            seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"], 
         )
     end
 
     curr_params = zeros(paramtype(model), 3)
     nparam_per_stage = 3
+
+    reset_idx = seirconfig["E_state_count"] + seirconfig["I_state_count"] + 1
+    reset_obs_state_iter_setup! = (f, model, dt, observation, iteration, use_prev_iter_params) -> begin
+        reset_state_iter_setup!(f, model, dt, observation, iteration, use_prev_iter_params, reset_idx)
+        return
+    end
 
     loglikelihood = (pars) -> begin # function loglikelihood(pars)
         # pre-itervention

@@ -19,11 +19,14 @@ function main(argv)
 	setenvironment!(config)
 
 	model, _ = makemodel(config)
+	N = config["model"]["stateprocess"]["params"]["E_state_count"]
+	M = config["model"]["stateprocess"]["params"]["I_state_count"]
+	obs_state_idx = N+M+2
 
 	if config["inference"]["data"] == "simulated"
 		# If specified, use simulated data as observations
 		path, t = readparticles(joinpath(pwd(), config["simulation"]["outfilename"]))
-		cases = pathtodailycases(path, obs_state_idx(model.stateprocess))
+		cases = pathtodailycases(path, obs_state_idx)
 		observations = Observations(t, cases)
 	else
 		# Otherwise, assume "filename" and "first_observation_time" keys

@@ -1,7 +1,6 @@
 using YAML
 using Distributions
 using Random 
-using MCMCChains
 using LinearAlgebra
 using DelimitedFiles
 
@@ -22,11 +21,14 @@ function main(argv)
     setenvironment!(config)
     
     model, params_seq = makemodel(config)
+    N = config["model"]["stateprocess"]["params"]["E_state_count"]
+    M = config["model"]["stateprocess"]["params"]["I_state_count"]
     
     # get data
     path, t = readparticles(joinpath(pwd(), config["simulation"]["outfilename"]))
     # only need daily cases
-    cases = pathtodailycases(path, obs_state_idx(model.stateprocess))
+    obs_state_idx = N + M + 1
+    cases = pathtodailycases(path, obs_state_idx)
     observations = Observations(t, cases)
     
     loglikelihood = makeloglikelihood(model, params_seq, observations, config)

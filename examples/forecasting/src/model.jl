@@ -2,17 +2,18 @@
 # observation model (7-day period), R0 inferred from data with a Gaussian 
 # Process prior distribution and no immigration.
 
-struct EpidemicModel{M<:StateSpaceModel, F<:AbstractFloat, S<:MTBPParamsSequence, 
-    O<:Observations, K<:MTBPKalmanFilterApproximation}
+struct EpidemicModel{M<:StateSpaceModel, F<:AbstractFloat, FN<:Union{F,Nothing}, S<:MTBPParamsSequence, 
+    O<:Observations, K<:MTBPKalmanFilterApproximation, I<:Union{Vector{F}, Nothing}}
     model::M
     T_E::F
     T_I::F
+    notification_rate::FN
     observed_state_idx::Int
     paramseq::S
     E_state_count::Int
     I_state_count::Int
     dow_effect::Array{Matrix{F}, 1}
-    immigration::Vector{F}
+    immigration::I
     observations::O
     kfapprox::K
     info_cache::Vector{F}
@@ -24,10 +25,12 @@ function makeapprox(model)
 end
 
 function makemodel(T_E, T_I, observation_scale_factors, observation_variance, R0changepoints, R0s,
-    E_state_count, I_state_count, initial_state, observations,
+    E_state_count, I_state_count, initial_state, observations, immigration_vec, notification_rate, observation_probability,
 )
     @assert length(R0s)==length(R0changepoints) "Must have the same number of R0 initial values as changepoints"
-
+    
+    isnotificationmodel = notification_rate !== nothing
+    
     delta, lambda, beta = convertseirparamstorates(first(R0s), T_E, T_I, E_state_count, I_state_count)
     seir = SEIR(
         E_state_count,
@@ -35,14 +38,14 @@ function makemodel(T_E, T_I, observation_scale_factors, observation_variance, R0
         beta, 
         delta, 
         lambda, 
-        OBSERVTION_PROBABILITY, 
-        IMMIGRATION_RATE, 
+        observation_probability,
+        notification_rate,
+        immigration_vec, 
         initial_state,
     )
 
     seir_param_vec = MTBPParams{paramtype(seir), Vector{paramtype(seir)}}[]
     seir_param_seq = MTBPParamsSequence(seir_param_vec)
-    immigration_vec = fill(IMMIGRATION_RATE, E_state_count+I_state_count)
     for i in eachindex(R0s)
         seir_params = MTBPParams(seir)
         seir_params.time = R0changepoints[i]
@@ -50,10 +53,11 @@ function makemodel(T_E, T_I, observation_scale_factors, observation_variance, R0
         push!(seir_param_seq.seq, seir_params)
     end
 
+    obs_state_idx = E_state_count + I_state_count + 1 + isnotificationmodel
     observation_matrices = Matrix{Float64}[]
     for i in eachindex(observation_scale_factors)
         obs_operator = zeros(1, getntypes(seir))
-        obs_operator[obs_state_idx(seir)] = observation_scale_factors[i]
+        obs_operator[obs_state_idx] = observation_scale_factors[i]
         push!(observation_matrices, obs_operator)
     end
 
@@ -73,7 +77,8 @@ function makemodel(T_E, T_I, observation_scale_factors, observation_variance, R0
     return EpidemicModel(
         model, 
         T_E, T_I, 
-        obs_state_idx(seir), 
+        notification_rate,
+        obs_state_idx, 
         seir_param_seq, 
         E_state_count,
         I_state_count, 
@@ -105,6 +110,12 @@ function Distributions.logpdf(model::EpidemicModel, params)
         observation_matrix = model.dow_effect[day_of_week]
         statespacemodel.observation_model.obs_map .= observation_matrix
         return 
+    end
+
+    reset_idx = model.E_state_count + model.I_state_count + 1 + (model.notification_rate!==nothing)
+    reset_obs_state_iter_setup! = (f, ssmodel, dt, observation, iteration, use_prev_iter_params) -> begin
+        reset_state_iter_setup!(f, ssmodel, dt, observation, iteration, use_prev_iter_params, reset_idx)
+        return
     end
 
     inferenceitersetup! = (args...) -> begin
