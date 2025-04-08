@@ -1,4 +1,5 @@
 include("../../utils/gaussianprocesses.jl")
+include("../../utils/loglikelihoodutils.jl")
 
 using Distributions
 
@@ -30,187 +31,11 @@ function convertseirdparamstorates(R_0, T_E, T_I, T_D, E_state_count, I_state_co
 	return delta, lambda, beta, notification_rate
 end
 
-"""
-Create a MultitypeBranchingProcess instance for a SEIR model with delayed notifications
-"""
-function SEIR_delay(
-	N, M,
-	infection_rate::T,
-	exposed_stage_chage_rate::T,
-	infectious_stage_chage_rate::T,
-	observation_probablity::T,
-	notification_rate::T,
-	immigration_rates::AbstractArray{T},
-	initial_dist::MTBPDiscreteDistribution,
-) where {T}
-	@assert length(immigration_rates) == N + M "length of immigration rates must match the number exposed and infectious stages N+M"
-	# State space has the following interpretation
-	# [ E1; ... EN; I1; ... IM;  O; N; IM]
-	# Ei - Exposed stage i
-	# Ii - Infectious stage i
-	# O  - Infectious count
-	# N - Observed notification count
-	# IM - Immigration
-	# IM state remains constant (i.e., poisson immigration events)
-	ntypes = N + M + 3
-	S = variabletype(initial_dist)
-
-	# define all progeny events
-	# Define the changes to the state space
-	# Infection
-	infection_event = zeros(S, ntypes)
-	infection_event[1] = one(S)
-
-	# Progression through latent stages
-	stage_progression_events = Array{S, 1}[]
-	for state_idx in 1:(N+M-1)
-		event = zeros(S, ntypes)
-		event[state_idx] = -one(S)
-		event[state_idx+1] = one(S)
-		push!(stage_progression_events, event)
-	end
-
-	recovery_event = zeros(S, ntypes)
-	recovery_event[N+M] = -one(S)
-
-	# Event observation occurs simulataneously with EN -> I1, with specified observation probability
-	observation_event = copy(stage_progression_events[N])
-	observation_event[N+M+1] = one(S)
-
-	# Notification after delay
-	notification_event = zeros(S, ntypes)
-	notification_event[N+M+1] = -one(S)
-	notification_event[N+M+2] = one(S)
-
-	immigration_events = Array{S, 1}[]
-	for state_idx in 1:(N+M)
-		event = zeros(S, ntypes)
-		event[state_idx] = one(S)
-		push!(immigration_events, event)
-	end
-
-	# define progeny distributions themselves
-	progeny_dist_type = MTBPDiscreteDistribution{
-		Vector{T}, # CDF parameters
-		Vector{Vector{S}}, # Events
-		Vector{T}, # first moments
-		Matrix{T}, # second moments
-	}
-	progeny_dists = progeny_dist_type[]
-
-	# unobserved exposed states
-	unobserved_exposed_state_cdf = T[1]
-	for state_idx in 1:N-1
-		# only stage transitions occur while exposed
-		unobserved_exposed_state_events = [
-			stage_progression_events[state_idx],
-		]
-		dist =
-			MTBPDiscreteDistribution(unobserved_exposed_state_cdf, unobserved_exposed_state_events)
-		push!(progeny_dists, dist)
-	end
-
-	# observed exposed state
-	observed_exposed_state_cdf = T[(1-observation_probablity), 1]
-	observed_exposed_state_events = [
-		stage_progression_events[N],
-		observation_event,
-	]
-	dist = MTBPDiscreteDistribution(observed_exposed_state_cdf, observed_exposed_state_events)
-	push!(progeny_dists, dist)
-
-	# infectious state transitions without recovery
-	infectious_state_cdf = T[infection_rate/(infection_rate+infectious_stage_chage_rate), 1]
-	for state_idx in N+1:N+M-1
-		# stage transitions or infections can occur
-		infectious_state_events = [
-			infection_event,
-			stage_progression_events[state_idx],
-		]
-		dist = MTBPDiscreteDistribution(infectious_state_cdf, infectious_state_events)
-		push!(progeny_dists, dist)
-	end
-
-	# infectious state transitions with recovery
-	infectious_state_cdf = T[infection_rate/(infection_rate+infectious_stage_chage_rate), 1]
-	infectious_state_events = [infection_event, recovery_event]
-	dist = MTBPDiscreteDistribution(infectious_state_cdf, infectious_state_events)
-	push!(progeny_dists, dist)
-
-	# Observation state
-	# observation_state_cdf = T[1]
-	observation_state_events = [notification_event]
-	dist = MTBPDiscreteDistribution(T[1], observation_state_events)
-	push!(progeny_dists, dist)
-
-	# Notification state - persist throughout simulation
-	dist = dummy_mtbp_discrete_distribution(ntypes, typeof(infection_event), T)
-	push!(progeny_dists, dist)
-
-	# Immigration
-	total_immigration_rate = sum(immigration_rates)
-	if total_immigration_rate == zero(total_immigration_rate)
-		# ensure cdf is proper
-		immigration_cdf = collect(
-			Iterators.drop(
-				range(
-					zero(total_immigration_rate),
-					one(total_immigration_rate),
-					length(immigration_rates) + 1,
-				),
-				1,
-			),
-		)
-	else
-		immigration_pmf = immigration_rates ./ total_immigration_rate
-		immigration_cdf = cumsum(immigration_pmf)
-		# ensure cdf is proper
-		immigration_cdf ./= immigration_cdf[end]
-	end
-	immigration_progeny_dist = MTBPDiscreteDistribution(immigration_cdf, immigration_events)
-	push!(progeny_dists, immigration_progeny_dist)
-
-	rates = zeros(T, ntypes)
-	rates[1:N] .= exposed_stage_chage_rate
-	rates[N+1:N+M] .= infection_rate + infectious_stage_chage_rate
-	rates[N+M+1] = notification_rate
-	rates[N+M+3] = total_immigration_rate
-
-	return MultitypeBranchingProcess(ntypes, initial_dist, progeny_dists, rates)
-end
-
-"""
-SEIR_delay taking in the initial state as a vector
-"""
-function SEIR_delay(
-	N, M,
-	infection_rate::T,
-	exposed_stage_chage_rate::T,
-	infectious_stage_chage_rate::T,
-	observation_probablity::T,
-	notification_rate::T,
-	immigration_rates::AbstractArray{T},
-	initial_state = [1; zeros(Int, N + M); 1],
-) where {T}
-	initial_cdf = T[1]
-	initial_dist = MTBPDiscreteDistribution(initial_cdf, [initial_state])
-	return SEIR_delay(
-		N, M,
-		infection_rate,
-		exposed_stage_chage_rate,
-		infectious_stage_chage_rate,
-		observation_probablity,
-		notification_rate,
-		immigration_rates,
-		initial_dist,
-	)
-end
-
 
 """
 In-place update of the parameters in a MTBPParams instance
 """
-function param_map!(
+function delay_param_map!(
 	mtbpparams,
 	E_state_count,
 	I_state_count,
@@ -235,31 +60,40 @@ function param_map!(
 	for i in infectious_states
 		mtbpparams.rates[i] = beta + lambda
 	end
-	# Count state
-	mtbpparams.rates[end-2] = notification_rate # CDF does not change
-	# Notification state - death rate always 0
-	mtbpparams.rates[end-1] = zero(eltype(mtbpparams.rates))
 
-	# Immigration state
-	mtbpparams.rates[end] = sum(immigration)
-
-	p = beta / (beta + lambda)
-	one_ = one(eltype(mtbpparams.rates))
-	for i in infectious_states
-		mtbpparams.cdfs[i][1] = p
-		mtbpparams.cdfs[i][2] = one_
+	isimmigrationmodel = immigration!==nothing
+	if isimmigrationmodel
+		# Count state
+		mtbpparams.rates[end-2] = notification_rate # CDF does not change
+		# Notification state - death rate always 0
+		mtbpparams.rates[end-1] = zero(eltype(mtbpparams.rates))
+		# Immigration state
+		mtbpparams.rates[end] = sum(immigration)
+	else
+		# Count state
+		mtbpparams.rates[end-1] = notification_rate # CDF does not change
+		# Notification state - death rate always 0
+		mtbpparams.rates[end] = zero(eltype(mtbpparams.rates))
 	end
 
-	# Immigration rates - if relevant
-	if iszero(mtbpparams.rates[end])
-		mtbpparams.cdfs[end] .= range(
-			zero(eltype(mtbpparams.cdfs[end])),
-			one(eltype(mtbpparams.cdfs[end])),
-			length(immigration),
-		)
-	else
-		mtbpparams.cdfs[end] .= cumsum(immigration)
-		mtbpparams.cdfs[end] ./= mtbpparams.cdfs[end][end]
+	p = beta / (beta + lambda)
+	for i in infectious_states
+		mtbpparams.cdfs[i][1] = p
+		mtbpparams.cdfs[i][2] = one(eltype(mtbpparams.rates))
+	end
+
+	if isimmigrationmodel
+		# Immigration rates - if relevant
+		if iszero(mtbpparams.rates[end])
+			mtbpparams.cdfs[end] .= range(
+				zero(eltype(mtbpparams.cdfs[end])),
+				one(eltype(mtbpparams.cdfs[end])),
+				length(immigration),
+			)
+		else
+			mtbpparams.cdfs[end] .= cumsum(immigration)
+			mtbpparams.cdfs[end] ./= mtbpparams.cdfs[end][end]
+		end
 	end
 
 	return mtbpparams
@@ -279,7 +113,9 @@ function makemodel(config)
 	N = seirconfig["E_state_count"]
 	M = seirconfig["I_state_count"]
 
-	seir = SEIR_delay(
+	immigration = seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"]
+
+	seir = SEIR(
 		N,
 		M,
 		beta,
@@ -287,7 +123,7 @@ function makemodel(config)
 		lambda,
 		seirconfig["observation_probability"],
 		notification_rate,
-		seirconfig["immigration_rate"],
+		immigration,
 		config["model"]["stateprocess"]["initial_state"],
 	)
 
@@ -295,7 +131,8 @@ function makemodel(config)
 	obs_config = config["model"]["observation"]
 
 	obs_operator = zeros(1, getntypes(seir))
-	obs_operator[obs_state_idx(seir)] = 1.0
+	obs_state_idx = N + M + 2
+	obs_operator[obs_state_idx] = 1.0
 	obs_model = LinearGaussianObservationModel(
 		obs_operator,
 		obs_config["mean"],
@@ -314,8 +151,8 @@ function makemodel(config)
 		T_E = seirconfig["T_E"][i]
 		T_I = seirconfig["T_I"][i]
 		T_D = seirconfig["T_D"][i]
-		immigration = seirconfig["immigration_rate"]
-		param_map!(
+		immigration = seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"]
+		delay_param_map!(
 			mtbpparams,
 			seirconfig["E_state_count"],
 			seirconfig["I_state_count"],
@@ -335,35 +172,6 @@ function pathtodailycases(path, cases_idx)
 	return cases
 end
 
-function reset_obs_state_iter_setup!(
-	f::HybridFilterApproximation,
-	model, dt, observation, iteration, use_prev_iter_params,
-)
-	return
-end
-
-function reset_obs_state_iter_setup!(
-	f::MTBPKalmanFilterApproximation,
-	model, dt, observation, iteration, use_prev_iter_params,
-)
-	reset_idx = obs_state_idx(model.stateprocess)
-	kf = f.kalmanfilter
-	kf.state_estimate[reset_idx] = zero(eltype(kf.state_estimate))
-	kf.state_estimate_covariance[:, reset_idx] .= zero(eltype(kf.state_estimate_covariance))
-	kf.state_estimate_covariance[reset_idx, :] .= zero(eltype(kf.state_estimate_covariance))
-	return
-end
-
-function reset_obs_state_iter_setup!(
-	f::ParticleFilterApproximation,
-	model, dt, observation, iteration, use_prev_iter_params,
-)
-	reset_idx = obs_state_idx(model.stateprocess)
-	return for particle in f.store.store
-		particle[reset_idx] = zero(eltype(particle))
-	end
-end
-
 function makeloglikelihood(observations, config)
 	model, param_seq = makemodel(config)
 	if config["inference"]["likelihood_approx"]["method"] == "hybrid"
@@ -373,7 +181,7 @@ function makeloglikelihood(observations, config)
 		switch_rng = makerng(config["inference"]["likelihood_approx"]["switch"]["seed"])
 		switch_threshold = config["inference"]["likelihood_approx"]["switch"]["threshold"]
 
-		randomstatesidx = getrandomstateidx(model.stateprocess)
+		randomstatesidx = 1:(getntypes(model.stateprocess) - 2)
 
 		approx = HybridFilterApproximation(
 			model, pf_rng, switch_rng, nparticles, switch_threshold, randomstatesidx,
@@ -403,12 +211,12 @@ function makeloglikelihood(observations, config)
 
 	seirconfig = config["model"]["stateprocess"]["params"]
 	function llparam_map!(mtbpparams, param)
-		return param_map!(
+		return delay_param_map!(
 			mtbpparams,
 			seirconfig["E_state_count"],
 			seirconfig["I_state_count"],
 			param,
-			seirconfig["immigration_rate"],
+			seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"],
 		)
 	end
 
@@ -434,6 +242,11 @@ function makeloglikelihood(observations, config)
 		not_estimated_vals[i] = map(x -> seirconfig[x][i], param_names[not_is_estimated])
 	end
 
+	reset_idx = seirconfig["E_state_count"] + seirconfig["I_state_count"] + 2
+    reset_obs_state_iter_setup! = (f, model, dt, observation, iteration, use_prev_iter_params) -> begin
+        reset_state_iter_setup!(f, model, dt, observation, iteration, use_prev_iter_params, reset_idx)
+        return
+    end
 
 	loglikelihood =
 		(pars) -> begin

@@ -19,34 +19,44 @@ function PoissonProcess(rate::AbstractFloat, typeof_state=Int)
     # to the counting state, so it has rate 0.
     rates = [rate, zero(rate)]
     poisson_process = MultitypeBranchingProcess(2, initial_dist, [progeny_dist, dummy_progeny_dist], rates)
-    return poisson_process
+    return poisson_process 
 end
 
 # SEIR
+"""
+Create a MultitypeBranchingProcess instance for a SEIR model
+"""
 function SEIR(
     N, M, 
     infection_rate::T, 
-    exposed_stage_chage_rate::T, 
+    exposed_stage_chage_rate::T,
     infectious_stage_chage_rate::T, 
     observation_probablity::T,
-    immigration_rates::AbstractArray{T},
+    notification_rate::Union{T, Nothing},
+    immigration_rates::Union{AbstractArray{T}, Nothing},
     initial_dist::MTBPDiscreteDistribution,
 ) where {T}
-    @assert length(immigration_rates)==N+M "length of immigration rates must match the number exposed and infectious stages N+M"
+    if immigration_rates !== nothing 
+        @assert length(immigration_rates)==N+M "length of immigration rates must match the number exposed and infectious stages N+M"
+    end
     # State space has the following interpretation
     # [ E1; ... EN; I1; ... IM;  O; IM]
     # Ei - Exposed stage i
     # Ii - Infectious stage i
     # O  - Observed infectious count
-    # IM - Immigtaion
+	# N - Observed notification count (this state exists only if its rate !== nothing)
+    # IM - Immigtaion (this state exists only if its rates !== nothing)
     # IM state remains constant (i.e., poisson immigration events)
-    ntypes = N+M+2
+    ntypes = N+M + 1 + (notification_rate!==nothing) + (immigration_rates!==nothing)
     S = variabletype(initial_dist)
 
     # define all progeny events
+    # Define the changes to the state space
+	# Infection
     infection_event = zeros(S, ntypes)
     infection_event[1] = one(S)
 
+	# Progression through latent stages
     stage_progression_events = Array{S,1}[]
     for state_idx in 1:(N+M-1)
         event = zeros(S, ntypes)
@@ -58,17 +68,27 @@ function SEIR(
     recovery_event = zeros(S, ntypes)
     recovery_event[N+M] = -one(S)
 
+	# Event observation occurs simulataneously with EN -> I1, with specified observation probability
     observation_event = copy(stage_progression_events[N])
     observation_event[N+M+1] = one(S)
 
-    immigration_events = Array{S,1}[]
-    for state_idx in 1:(N+M)
-        event = zeros(S, ntypes)
-        event[state_idx] = one(S)
-        push!(immigration_events, event)
+    # Notification after delay
+    if notification_rate !== nothing
+	    notification_event = zeros(S, ntypes)
+	    notification_event[N+M+1] = -one(S)
+	    notification_event[N+M+2] = one(S)
     end
 
-    # define progeny distributions
+    if immigration_rates !== nothing
+        immigration_events = Array{S,1}[]
+        for state_idx in 1:(N+M)
+            event = zeros(S, ntypes)
+            event[state_idx] = one(S)
+            push!(immigration_events, event)
+        end
+    end
+
+    # define progeny distributions themselves
     progeny_dist_type = MTBPDiscreteDistribution{
         Vector{T}, # CDF parameters
         Vector{Vector{S}}, # Events
@@ -84,7 +104,9 @@ function SEIR(
         unobserved_exposed_state_events = [
             stage_progression_events[state_idx]
         ]
-        dist = MTBPDiscreteDistribution(unobserved_exposed_state_cdf, unobserved_exposed_state_events)
+        dist = MTBPDiscreteDistribution(
+            unobserved_exposed_state_cdf, unobserved_exposed_state_events
+        )
         push!(progeny_dists, dist)
     end
 
@@ -115,39 +137,76 @@ function SEIR(
     dist = MTBPDiscreteDistribution(infectious_state_cdf, infectious_state_events)
     push!(progeny_dists, dist)
 
-    # observation state
-    dist = dummy_mtbp_discrete_distribution(ntypes, typeof(infection_event), T)
-    push!(progeny_dists, dist)
-
-    total_immigration_rate = sum(immigration_rates)
-    if total_immigration_rate==zero(total_immigration_rate)
-        # ensure cdf is proper
-        immigration_cdf = collect(Iterators.drop(range(zero(total_immigration_rate), one(total_immigration_rate), length(immigration_rates)+1),1))
+    # Observation state
+	# observation_state_cdf = T[1]
+    if notification_rate !== nothing
+        observation_state_events = [notification_event]
+        dist = MTBPDiscreteDistribution(T[1], observation_state_events)
+        push!(progeny_dists, dist)
     else
-        immigration_pmf = immigration_rates./total_immigration_rate
-        immigration_cdf = cumsum(immigration_pmf)
-        # ensure cdf is proper
-        immigration_cdf ./= immigration_cdf[end]
+        dist = dummy_mtbp_discrete_distribution(ntypes, typeof(infection_event), T)
+        push!(progeny_dists, dist)
     end
-    immigration_progeny_dist = MTBPDiscreteDistribution(immigration_cdf, immigration_events)
-    push!(progeny_dists, immigration_progeny_dist)
+
+    # Notification state - persist throughout simulation
+    if notification_rate !== nothing
+        dist = dummy_mtbp_discrete_distribution(ntypes, typeof(infection_event), T)
+        push!(progeny_dists, dist)
+    end
+
+    if immigration_rates !== nothing
+        total_immigration_rate = sum(immigration_rates)
+        if total_immigration_rate==zero(total_immigration_rate)
+            # ensure cdf is proper
+            immigration_cdf = collect(
+                Iterators.drop(
+                    range(
+                        zero(total_immigration_rate),
+                        one(total_immigration_rate),
+                        length(immigration_rates) + 1,
+                    ),
+                    1,
+                ),
+            )
+        else
+            immigration_pmf = immigration_rates./total_immigration_rate
+            immigration_cdf = cumsum(immigration_pmf)
+            # ensure cdf is proper
+            immigration_cdf ./= immigration_cdf[end]
+        end
+        immigration_progeny_dist = MTBPDiscreteDistribution(immigration_cdf, immigration_events)
+        push!(progeny_dists, immigration_progeny_dist)
+    end
 
     rates = zeros(T, ntypes)
-    rates[1:N] .= exposed_stage_chage_rate
-    rates[N+1:N+M] .= infection_rate+infectious_stage_chage_rate
-    rates[N+M+2] = total_immigration_rate
+	rates[1:N] .= exposed_stage_chage_rate
+	rates[N+1:N+M] .= infection_rate + infectious_stage_chage_rate
+    if notification_rate !== nothing
+	    rates[N+M+1] = notification_rate
+        if immigration_rates !== nothing
+            rates[N+M+3] = total_immigration_rate
+        end
+    else
+        if immigration_rates !== nothing
+            rates[N+M+2] = total_immigration_rate
+        end
+    end
 
     return MultitypeBranchingProcess(ntypes, initial_dist, progeny_dists, rates)
 end
 
+"""
+SEIR taking in the initial state as a vector
+"""
 function SEIR(
     N, M, 
     infection_rate::T, 
     exposed_stage_chage_rate::T, 
     infectious_stage_chage_rate::T, 
     observation_probablity::T,
-    immigration_rates::AbstractArray{T},
-    initial_state=[1;zeros(Int,N+M);1],
+    notification_rate::Union{T, Nothing}=nothing,
+    immigration_rates::Union{AbstractArray{T}, Nothing}=nothing,
+    initial_state = _default_initial_state(N, M, notification_rate, immigration_rates),
 ) where {T}
     initial_cdf = T[1]
     initial_dist = MTBPDiscreteDistribution(initial_cdf, [initial_state])
@@ -157,46 +216,21 @@ function SEIR(
         exposed_stage_chage_rate, 
         infectious_stage_chage_rate, 
         observation_probablity, 
+        notification_rate,
         immigration_rates, 
-        initial_dist)
-end
-function SEIR(
-    N, M, 
-    infection_rate::T, 
-    exposed_stage_chage_rate::T, 
-    infectious_stage_chage_rate::T, 
-    observation_probablity::T,
-    immigration_rate::T,
-    initial=[1;zeros(Int,N+M);1],
-) where{T}
-    immigration_rates = fill(immigration_rate/(N+M), N+M)
-    return SEIR(
-        N, M, 
-        infection_rate, 
-        exposed_stage_chage_rate, 
-        infectious_stage_chage_rate, 
-        observation_probablity,
-        immigration_rates,
-        initial,
+        initial_dist
     )
 end
 
-function obs_state_idx(SEIR_model)
-    return SEIR_model.ntypes-1
+function _default_initial_state(N, M, notification_rate, immigration_rate)
+    return [1; zeros(Int, N + M); 0; 1]
 end
-
-function immigration_state_idx(SEIR_model)
-    return SEIR_model.ntypes
+function _default_initial_state(N, M, notification_rate::Nothing, immigration_rate)
+    return [1; zeros(Int, N + M); 1]
 end
-
-function getconststatecount(SEIR_model)
-    return 2
+function _default_initial_state(N, M, notification_rate, immigration_rate::Nothing)
+    return [1; zeros(Int, N + M); 0]
 end
-
-function getrandomstatecount(SEIR_model)
-    return SEIR_model.ntypes-getconststatecount(SEIR_model)
-end
-
-function getrandomstateidx(SEIR_model)
-    return 1:getrandomstatecount(SEIR_model)
+function _default_initial_state(N, M, notification_rate::Nothing, immigration_rate::Nothing)
+    return [1; zeros(Int, N + M)]
 end

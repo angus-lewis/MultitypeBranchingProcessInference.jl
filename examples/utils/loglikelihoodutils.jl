@@ -1,25 +1,23 @@
-function reset_obs_state_iter_setup!(
+function reset_state_iter_setup!(
     f::HybridFilterApproximation,
-    model, dt, observation, iteration, use_prev_iter_params,
+    model, dt, observation, iteration, use_prev_iter_params, reset_idx
 )
     return 
 end
-function reset_obs_state_iter_setup!(
+function reset_state_iter_setup!(
     f::MTBPKalmanFilterApproximation,
-    model, dt, observation, iteration, use_prev_iter_params,
+    model, dt, observation, iteration, use_prev_iter_params, reset_idx
 )
-    reset_idx = obs_state_idx(model.stateprocess)
     kf = f.kalmanfilter
     kf.state_estimate[reset_idx] = zero(eltype(kf.state_estimate))
     kf.state_estimate_covariance[:, reset_idx] .= zero(eltype(kf.state_estimate_covariance))
     kf.state_estimate_covariance[reset_idx, :] .= zero(eltype(kf.state_estimate_covariance))
     return 
 end
-function reset_obs_state_iter_setup!(
+function reset_state_iter_setup!(
     f::ParticleFilterApproximation,
-    model, dt, observation, iteration, use_prev_iter_params,
+    model, dt, observation, iteration, use_prev_iter_params, reset_idx
 )
-    reset_idx = obs_state_idx(model.stateprocess)
     for particle in f.store.store
         particle[reset_idx] = zero(eltype(particle))
     end
@@ -64,8 +62,15 @@ function param_map!(
     for i in infectious_states
         mtbpparams.rates[i] = beta+lambda
     end
-    mtbpparams.rates[end-1] = zero(eltype(mtbpparams.rates))
-    mtbpparams.rates[end] = sum(immigration)
+    
+    isimmigrationmodel = immigration!==nothing
+    
+    if isimmigrationmodel
+        mtbpparams.rates[end-1] = zero(eltype(mtbpparams.rates))
+        mtbpparams.rates[end] = sum(immigration)
+    else
+        mtbpparams.rates[end] = zero(eltype(mtbpparams.rates))
+    end
 
     p = beta/(beta+lambda)
     for i in infectious_states
@@ -73,9 +78,9 @@ function param_map!(
         mtbpparams.cdfs[i][2] = one(eltype(mtbpparams.rates))
     end
 
-    if iszero(mtbpparams.rates[end])
+    if isimmigrationmodel && iszero(mtbpparams.rates[end])
         mtbpparams.cdfs[end] .= range(zero(eltype(mtbpparams.cdfs[end])), one(eltype(mtbpparams.cdfs[end])), length(immigration))
-    else
+    elseif isimmigrationmodel
         mtbpparams.cdfs[end] .= cumsum(immigration)
         mtbpparams.cdfs[end] ./= mtbpparams.cdfs[end][end]
     end

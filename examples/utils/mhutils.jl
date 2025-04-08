@@ -1,4 +1,3 @@
-
 function makeproposal(config)
     propconfig = config["inference"]["proposal_parameters"]
     mu = propconfig["mean"]

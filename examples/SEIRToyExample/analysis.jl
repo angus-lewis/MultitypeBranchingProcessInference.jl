@@ -34,6 +34,7 @@ mtbp = StateSpaceModels.SEIR(
     1, 1,
     params["infection_rate"], params["exposed_stage_chage_rate"], params["infectious_stage_chage_rate"], 
     params["observation_probability"], 
+    nothing, # notification rate
     [params["E_immigration_rate"], params["I_immigration_rate"]],
     [params["initial_E"], params["initial_I"], params["initial_O"], 1],
 )

@@ -28,6 +28,7 @@ function main(
     mtbp = SEIR(1, 1,
         infection_rate, exposed_stage_chage_rate, infectious_stage_chage_rate, 
         observation_probablity, 
+        nothing, # notification rate
         [E_immigration_rate, I_immigration_rate], 
         Int64[initial_E, initial_I, initial_O, 1],
     )

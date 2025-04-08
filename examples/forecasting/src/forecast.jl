@@ -107,13 +107,14 @@ function sample_posteriors(rng, nsamples, config, ntypes)
 
     # samples states
     statessampled = similar(statemeanssampled)
+    isimmigrationmodel = config["immigration_rate"]!="nothing"
     for i in axes(statessampled, 2)
         @views mu = statemeanssampled[:,i]
         @views cov = reshape(statecovsampled[:,i], ntypes, ntypes)
         ensure_symmetric!(cov)
 
         # ignore last element as it is immigration
-        @views Z = MvNormal(mu[1:end-1], cov[1:end-1, 1:end-1])
+        @views Z = MvNormal(mu[1:end-isimmigrationmodel], cov[1:end-isimmigrationmodel, 1:end-isimmigrationmodel])
         statessampled[1:end-1,i] .= rand(rng, Z)
     end
     statessampled[end,:] .= 0

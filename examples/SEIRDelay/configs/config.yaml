@@ -31,7 +31,7 @@ inference:
     # filename: data/epinow_example.csv
     # first_observation_time: 1.0
   likelihood_approx:
-    method: particle_filter
+    method: kalman_filter
     switch:
       threshold: 20
       seed: 1516171819
@@ -54,13 +54,13 @@ inference:
   mh_config:
     seed: 1011121314
     buffer_size: 16384
-    outfilename: data/seir_delay_particle_param_samples.f64_array.bin
+    outfilename: data/seir_delay_kalman_param_samples.f64_array.bin
     max_iters: 831072
     nparams: 8
     max_time_sec: 1500.0 #604800.0 # 1 week!
     init_sample: [2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0]
     verbose: true
-    infofilename: data/seir_delay_particle.info.txt
+    infofilename: data/seir_delay_kalman.info.txt
     adaptive: true
     nadapt: 10000 #131072
     adapt_cov_scale: 0.34

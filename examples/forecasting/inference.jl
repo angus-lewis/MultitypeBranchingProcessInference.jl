@@ -28,6 +28,9 @@ function main(argv)
         config["model"]["fixed_parameters"]["I_state_count"],
         config["model"]["fixed_parameters"]["initial_state"],
         observations,
+        config["model"]["fixed_parameters"]["immigration_rate"]=="nothing" ? nothing : config["model"]["fixed_parameters"]["immigration_rate"],
+        config["model"]["fixed_parameters"]["notification_rate"]=="nothing" ? nothing : config["model"]["fixed_parameters"]["notification_rate"],
+        config["model"]["fixed_parameters"]["observation_probability"],
     )
 
     prior_dist = makeprior(

@@ -24,9 +24,11 @@ function read_datasets(filenames, datasetnames, nburnin, paramnames)
 end
 
 filenames = [
-    "data/dow_expcovfn_vic_covid_kalman_param_samples.f64_array.bin"
+    "data/dow_expcovfn_vic_covid_kalman_param_samples.f64_array.bin";
+    "data/_dow_expcovfn_vic_covid_kalman_param_samples.f64_array.bin";
+    "data/__dow_expcovfn_vic_covid_kalman_param_samples.f64_array.bin";
 ]
-datasetnames = ["dow"]
+datasetnames = ["dow3";"dow5";"dow4"]
 nburnin = 0
 paramnames = vcat(
     [Symbol("R_0_$i") for i in 1:11], 
@@ -36,9 +38,9 @@ paramnames = vcat(
 samples = read_datasets(filenames, datasetnames, nburnin, paramnames)
 
 info_filenames = [
-    "data/dow_expcovfn_vic_covid_kalman.model_info.f64_array.bin"
+    "data/_dow_expcovfn_vic_covid_kalman.model_info.f64_array.bin"
 ]
-ntypes = 4
+ntypes = 5
 info_paramnames = vcat(
     [Symbol("State_$i") for i in 1:ntypes], 
     [Symbol("Cov(State_$i, State_$j)") for i in 1:ntypes, j in 1:ntypes][:], 
@@ -46,10 +48,10 @@ info_paramnames = vcat(
 
 model_info = read_datasets(info_filenames, datasetnames, nburnin, info_paramnames)
 
-plot(samples[datasetnames[1]][paramnames[1:end-1]])
-# for i in Iterators.drop(datasetnames, 1)
-#     plot!(samples[i][paramnames[1:end-1]])
-# end
+plot(samples[datasetnames[1]][paramnames[1:end]])
+for i in Iterators.drop(datasetnames, 1)
+    plot!(samples[i][paramnames[1:end]])
+end
 plot!()
 
 plot(model_info[datasetnames[1]][info_paramnames[1:end-1]])
