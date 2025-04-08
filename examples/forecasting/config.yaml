@@ -13,7 +13,7 @@ model:
     immigration_rate: nothing # [0.0, 0.0]
     observation_model:
       # ratio of reports on a day of the week to average reports per day
-      scale_factors: [1.0627884989711363, 1.0141260219120183, 0.960402647238752, 1.0729102941994326, 0.8805961848617986, 0.9339302597185918, 1.0752460930982704]
+      day_of_week_effect_prior: [1.0627884989711363, 1.0141260219120183, 0.960402647238752, 1.0729102941994326, 0.8805961848617986, 0.9339302597185918, 1.0752460930982704]
       variance: 1.0
   inferred_parameters: 
     R_0:

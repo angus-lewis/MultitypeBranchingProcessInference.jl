@@ -17,10 +17,13 @@ function main(argv)
     t = config["data"]["first_observation_time"] .+ (0:(length(raw_observations)-1))
     observations = Observations(t, raw_observations)
 
+    dow_prior = config["model"]["fixed_parameters"]["observation_model"]["day_of_week_effect_prior"]
+    dow_effect = estimate_dow_effect(vcat(raw_observations...), 0, dow_prior, length(dow_prior))
+
     epidemicmodel = makemodel(
         config["model"]["fixed_parameters"]["T_E"],
         config["model"]["fixed_parameters"]["T_I"],
-        config["model"]["fixed_parameters"]["observation_model"]["scale_factors"],
+        dow_effect,
         config["model"]["fixed_parameters"]["observation_model"]["variance"],
         config["model"]["inferred_parameters"]["R_0"]["changepoints"],
         config["model"]["inferred_parameters"]["R_0"]["initial_values"],
@@ -28,6 +31,9 @@ function main(argv)
         config["model"]["fixed_parameters"]["I_state_count"],
         config["model"]["fixed_parameters"]["initial_state"],
         observations,
+        config["model"]["fixed_parameters"]["immigration_rate"]=="nothing" ? nothing : config["model"]["fixed_parameters"]["immigration_rate"],
+        config["model"]["fixed_parameters"]["notification_rate"]=="nothing" ? nothing : config["model"]["fixed_parameters"]["notification_rate"],
+        config["model"]["fixed_parameters"]["observation_probability"],
     )
     seir = epidemicmodel.model.stateprocess
 
@@ -47,12 +53,11 @@ function main(argv)
     r0sampled, statessampled = sample_posteriors(forecastrng, nforecastsims, config, getntypes(seir))
 
     transform = config["model"]["inferred_parameters"]["R_0"]["prior"]["transform"]
-    r0forecast = forecast_R0(forecastrng, r0prior, r0sampled, forecasttimes, forecastR0mu, transform)
+    @show r0forecast = forecast_R0(forecastrng, r0prior, r0sampled, forecasttimes, forecastR0mu, transform)
     
     cases = forecastcases(forecastrng, epidemicmodel, last(observations).time, forecasttimes, statessampled, r0forecast)
 
-    doweffect = config["model"]["fixed_parameters"]["observation_model"]["scale_factors"]
-    apply_dow_effect!(cases, forecasttimes, doweffect)
+    apply_dow_effect!(cases, forecasttimes, dow_effect)
 
     cases .= round.(cases)
     
