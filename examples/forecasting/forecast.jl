@@ -53,7 +53,7 @@ function main(argv)
     r0sampled, statessampled = sample_posteriors(forecastrng, nforecastsims, config, getntypes(seir))
 
     transform = config["model"]["inferred_parameters"]["R_0"]["prior"]["transform"]
-    @show r0forecast = forecast_R0(forecastrng, r0prior, r0sampled, forecasttimes, forecastR0mu, transform)
+    r0forecast = forecast_R0(forecastrng, r0prior, r0sampled, forecasttimes, forecastR0mu, transform)
     
     cases = forecastcases(forecastrng, epidemicmodel, last(observations).time, forecasttimes, statessampled, r0forecast)
 

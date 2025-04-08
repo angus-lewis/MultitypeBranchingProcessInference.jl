@@ -44,7 +44,7 @@ function forecastcases(rng, model, lastdatatime, forecasttimes, initialstatesamp
 
     for n in axes(r0forecasts, 2)
         prevstatesamp .= initialstatesamples[:,n]
-        @show prevstatesamp .= round.(initialstatesamples[:,n])
+        prevstatesamp .= round.(initialstatesamples[:,n])
         prevstatesamp[model.observed_state_idx] = 0
         prevt = lastdatatime
 
