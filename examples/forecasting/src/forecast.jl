@@ -1,13 +1,34 @@
-function forecast_R0(rng, prior_gp, posterior_samples, forecasttimes, forecastpriormean, transform)
-    if transform == "log"
-        posterior_samples .= log.(posterior_samples)
+function evaluate_R0_mean(posterior_samples, meanmodel, times)
+    priormean = zeros(eltype(posterior_samples), size(times, 2), size(posterior_samples, 2))
+    for i in axes(priormean, 2)
+        for n in 1:paramcount(meanmodel)
+            setfield!(meanmodel, n, posterior_samples[n,i])
+        end
+        for t in axes(priormean, 1)
+            priormean[t,i] = meanmodel(times[:,t])
+        end
     end
+    return priormean
+end
+
+function forecast_R0(rng, prior_gp, posterior_samples, forecasttimes, meanmodel, transform)
+    offset = paramcount(meanmodel)+1
+    if transform == "log"
+        posterior_samples[offset:end,:] .= log.(posterior_samples[offset:end,:])
+    end
+    # NEED TO EVALUATE MEAN MODEL FOR INSAMPLE SAMPLES
+    priormean = evaluate_R0_mean(posterior_samples, meanmodel, prior_gp.x)
+    forecastpriormean = evaluate_R0_mean(posterior_samples, meanmodel, forecasttimes)
     
-    forecastsamples = rand(rng, prior_gp, posterior_samples, forecasttimes, forecastpriormean)
+    forecastsamples = zeros(eltype(posterior_samples), size(forecasttimes, 2), size(posterior_samples, 2))
+    for i in axes(forecastsamples, 2)
+        prior_gp.mu .= priormean[:,i]
+        forecastsamples[:,i] .= rand(rng, prior_gp, posterior_samples[offset:end,i], forecasttimes, forecastpriormean[:,i])
+    end
     
     if transform == "log"
         forecastsamples .= exp.(forecastsamples)
-        posterior_samples .= exp.(posterior_samples)
+        posterior_samples[offset:end,:] .= exp.(posterior_samples[offset:end,:])
     end
 
     return forecastsamples
@@ -155,6 +176,54 @@ function write_forecasts(filename, times, cases)
             for i in axes(cases, 2)
                 print(io, ",$(Int(cases[t,i]))")
             end
+            print(io, "\n")
+        end
+    end
+    return 
+end
+
+function write_r0s(filename, times, forecasttimes, r0, r0forecast)
+    @assert size(r0, 1)==length(times)
+    @assert size(r0forecast, 1)==length(forecasttimes)
+    open(filename, "w") do io
+        print(io, "time")
+        for i in axes(r0, 2)
+            print(io, ",r0_$i")
+        end
+        print(io, "\n")
+
+        for t in eachindex(times)
+            print(io, "$(times[t])")
+            for i in axes(r0, 2)
+                print(io, ",$((r0[t,i]))")
+            end
+            print(io, "\n")
+        end
+
+        for t in eachindex(forecasttimes)
+            print(io, "$(forecasttimes[t])")
+            for i in axes(r0forecast, 2)
+                print(io, ",$((r0forecast[t,i]))")
+            end
+            print(io, "\n")
+        end
+    end
+    return 
+end
+
+function write_states(filename, states)
+    open(filename, "w") do io
+        for i in axes(states, 2)
+            print(io, "sample_$i,")
+        end
+        seek(io, position(io)-sizeof(","))
+        print(io, "\n")
+
+        for t in axes(states, 1)
+            for i in axes(states, 2)
+                print(io, "$((states[t,i])),")
+            end
+            seek(io, position(io)-sizeof(","))
             print(io, "\n")
         end
     end

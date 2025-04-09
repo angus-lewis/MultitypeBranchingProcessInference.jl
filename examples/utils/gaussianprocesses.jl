@@ -247,7 +247,7 @@ end
 
 function Random.rand(rng::AbstractRNG, gp::GaussianProcess, y::VM, x::Matrix, 
     mu::AbstractVector=zeros(eltype(y), size(x,2)), 
-    out::VM=similar(y, size(x,2), size(y,2))) where {VM<:AbstractVecOrMat}
+    out=similar(y, size(x,2), size(y,2))) where {VM<:AbstractVecOrMat}
 
     @assert size(y,2) == size(out,2)
     @assert size(x,2) == size(mu,1)
@@ -264,7 +264,7 @@ end
 
 function Random.rand(rng::AbstractRNG, 
     gp::GaussianProcess, y::VM, covarainces::AbstractMatrix, # adjustment for conditioning
-    new_gp::GaussianProcess, out::VM=similar(y, size(x,2), size(y,2)), # unconditional distribution of new observations
+    new_gp::GaussianProcess, out=similar(y, size(x,2), size(y,2)), # unconditional distribution of new observations
 ) where {VM<:AbstractVecOrMat}
     @assert size(y,2) == size(out,2)
     @assert size(new_gp.x,2) == size(covarainces,1)

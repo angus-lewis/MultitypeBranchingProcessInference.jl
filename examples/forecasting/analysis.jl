@@ -3,6 +3,8 @@ using MCMCChains
 using YAML
 using MultitypeBranchingProcessInference
 
+include("src/forecasting.jl")
+
 function read_datasets(filenames, datasetnames, nburnin, paramnames)
     fileid = 1
     chains = Dict{String, Chains}()
@@ -25,12 +27,12 @@ end
 
 filenames = [
     "data/dow_expcovfn_vic_covid_kalman_param_samples.f64_array.bin";
-    "data/_dow_expcovfn_vic_covid_kalman_param_samples.f64_array.bin";
-    "data/__dow_expcovfn_vic_covid_kalman_param_samples.f64_array.bin";
+    # "data/_dow_expcovfn_vic_covid_kalman_param_samples.f64_array.bin";
 ]
-datasetnames = ["dow3";"dow5";"dow4"]
-nburnin = 0
+datasetnames = ["dow"]
+nburnin = 231000
 paramnames = vcat(
+    [:L; :L0; :k; :x0],
     [Symbol("R_0_$i") for i in 1:11], 
     [:LL]
 )
@@ -48,7 +50,16 @@ info_paramnames = vcat(
 
 model_info = read_datasets(info_filenames, datasetnames, nburnin, info_paramnames)
 
-plot(samples[datasetnames[1]][paramnames[1:end]])
+function evalmeanfun(samps, times)
+    out = zeros(length(times), size(samps,2))
+    for i in axes(samps,2)
+        fun = Logistic4(samps[1:4,i]...)
+        out[:,i] .= fun.(times)
+    end
+    return out
+end
+
+plot(samples[datasetnames[1]])
 for i in Iterators.drop(datasetnames, 1)
     plot!(samples[i][paramnames[1:end]])
 end
@@ -60,3 +71,9 @@ plot(model_info[datasetnames[1]][info_paramnames[1:end-1]])
 # end
 plot!()
 
+means = evalmeanfun(samples["dow"].value.data.parent', 0:7:72)
+
+histogram(exp.(means[:,1:10:end] .- 0.4)', alpha=0.2)
+histogram!(samples["dow"].value.data.parent[1:10:end,5:end-1], alpha=0.2)
+
+plot(exp.(means[:,1:100:end] .- 0.4), alpha=0.05, color=:blue, label=false)
