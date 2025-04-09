@@ -16,7 +16,7 @@ struct MTBPDiscreteDistribution{D<:AbstractVector{<:Real}, E<:AbstractVector{<:A
         @assert issorted(distribution) "distribution is not monotonic"
         if length(distribution)>0 
             @assert distribution[1]>=zero(eltype(distribution)) "distribution is not non-negative"
-            @assert distribution[end]==one(eltype(distribution)) "distribution is defective"
+            @assert distribution[end]==one(eltype(distribution)) "distribution is defective, got $(distribution[end])"
             @assert length(first_moments)==ntypes "first_moments must be the same length as the number of types"
             @assert size(second_moments)==(ntypes, ntypes) "second_moments must be square with size equal to the number of types"
         end

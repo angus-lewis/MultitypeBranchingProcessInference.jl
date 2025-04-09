@@ -17,6 +17,7 @@ struct EpidemicModel{M<:StateSpaceModel, F<:AbstractFloat, FN<:Union{F,Nothing},
     observations::O
     kfapprox::K
     info_cache::Vector{F}
+    model_param_offset::Int
 end
 
 function makeapprox(model)
@@ -24,8 +25,17 @@ function makeapprox(model)
     return approx
 end
 
+function read_initial_state_distribution(filename)
+    data = readdlm(filename, ','; header=false, comments=true, comment_char='#')
+    weights = cumsum(data[1,:])
+    weights ./= weights[end]
+    samples = [Int.(data[2:end,i]) for i in axes(data,2)]
+    return MTBPDiscreteDistribution(weights, samples)
+end
+
 function makemodel(T_E, T_I, observation_scale_factors, observation_variance, R0changepoints, R0s,
     E_state_count, I_state_count, initial_state, observations, immigration_vec, notification_rate, observation_probability,
+    model_param_offset,
 )
     @assert length(R0s)==length(R0changepoints) "Must have the same number of R0 initial values as changepoints"
     
@@ -87,6 +97,7 @@ function makemodel(T_E, T_I, observation_scale_factors, observation_variance, R0
         observations,
         kfapprox,
         model_info_cache,
+        model_param_offset,
     )
 end
 
@@ -102,14 +113,15 @@ end
 
 function Distributions.logpdf(model::EpidemicModel, params)
     for i in eachindex(model.paramseq.seq)
-        llparam_map!(model.paramseq[i], params[i], model)
+        llparam_map!(model.paramseq[i], params[i + model.model_param_offset], model)
     end
 
     day_of_week_itersetup! = (f, statespacemodel, dt, observation, iteration, use_prev_iter_params) -> begin
-        day_of_week =  (iteration-1)%length(model.dow_effect) + 1
+        day_of_week = (iteration-1)%length(model.dow_effect) + 1
         observation_matrix = model.dow_effect[day_of_week]
         statespacemodel.observation_model.obs_map .= observation_matrix
-        return 
+        f.kalmanfilter.observation_model .= observation_matrix
+        return
     end
 
     reset_idx = model.E_state_count + model.I_state_count + 1 + (model.notification_rate!==nothing)
