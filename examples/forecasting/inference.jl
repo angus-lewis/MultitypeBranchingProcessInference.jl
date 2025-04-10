@@ -55,7 +55,7 @@ function main(argv)
     MetropolisHastings.skip_binary_array_file_header(mh_config.model_info_io, 2)
 
     @time nsamples = MetropolisHastings.metropolis_hastings(
-        mh_rng, epidemicmodel, prior_dist, proposal_distribuion, mh_config,
+        mh_rng, epidemicmodel, prior_dist, proposal_distribuion, mh_config, false
     )
 
     MetropolisHastings.write_binary_array_file_header(
@@ -63,9 +63,7 @@ function main(argv)
         (length(epidemicmodel.info_cache), nsamples)
     )
 
-    if mh_config.model_info_io !== devnull && mh_config.model_info_io !== stdout
-        close(mh_config.model_info_io)
-    end
+    close(mh_config)
 
     println()
     return
