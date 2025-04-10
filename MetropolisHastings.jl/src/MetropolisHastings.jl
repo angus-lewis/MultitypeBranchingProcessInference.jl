@@ -210,7 +210,7 @@ function check_init_params(init_params, logpdf_fn::Function)
     return 
 end
 
-function metropolis_hastings(rng::AbstractRNG, loglikelihood_fn::Function, prior_logpdf_fn::Function, symmetric_proposal_distribution, mh_config::MHConfig, close_ios=true)
+function metropolis_hastings(rng::AbstractRNG, loglikelihood_fn::Function, prior_logpdf_fn::Function, symmetric_proposal_distribution, mh_config::MHConfig, close_io=true)
     # set up parameters in cases when we do or do not continue from a file
     samples_count = init_sample_setup!(mh_config)
     maxsamples = samples_count + mh_config.maxiters
@@ -277,12 +277,12 @@ function metropolis_hastings(rng::AbstractRNG, loglikelihood_fn::Function, prior
     header = (mh_config.nparams+1, samples_count)
     write_binary_array_file_header(mh_config.samples_io, header)
 
-    close_ios && close(mh_config)
+    close_io && close_ios(mh_config)
 
     return samples_count
 end
 
-function close(mh_config::MHConfig)
+function close_ios(mh_config::MHConfig)
     mh_config.samples_io !== stdout && close(mh_config.samples_io)
     mh_config.info_io !== stdout && close(mh_config.info_io)
     mh_config.model_info_io !== stdout && close(mh_config.model_info_io)
@@ -324,7 +324,7 @@ function write_model_info(io::IO, model, isacc::Bool)
     error("Implementation specific model info writer not found, perhaps it has not been implemented.")
 end
 
-function metropolis_hastings(rng::AbstractRNG, model, prior, proposal, mh_config::MHConfig, close_ios=true)
+function metropolis_hastings(rng::AbstractRNG, model, prior, proposal, mh_config::MHConfig, close_io=true)
     # set up parameters in cases when we do or do not continue from a file
     samples_count = init_sample_setup!(mh_config)
     maxsamples = samples_count + mh_config.maxiters
@@ -396,7 +396,7 @@ function metropolis_hastings(rng::AbstractRNG, model, prior, proposal, mh_config
     header = (mh_config.nparams+1, samples_count)
     write_binary_array_file_header(mh_config.samples_io, header)
 
-    close_ios && close(mh_config)
+    close_io && close_ios(mh_config)
 
     return samples_count
 end
