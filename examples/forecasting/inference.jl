@@ -63,7 +63,7 @@ function main(argv)
         (length(epidemicmodel.info_cache), nsamples)
     )
 
-    close(mh_config)
+    close_ios(mh_config)
 
     println()
     return
