@@ -11,7 +11,7 @@ Reexport.@reexport using ParticleFilter
 Reexport.@reexport using KalmanFilters
 Reexport.@reexport using MetropolisHastings
 
-import MultitypeBranchingProcesses: init!
+import MultitypeBranchingProcesses: init!, simulate, simulate!
 import ParticleFilter: gettime, iterate!
 import Distributions: mean, mean!, logpdf!
 
@@ -19,6 +19,7 @@ export MTBPParams,
     gettime,
     MTBPParamsSequence,
     setparams!,
+    simulate!,
     simulate
 
 export MTBPKalmanFilterApproximation,

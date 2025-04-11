@@ -30,7 +30,7 @@ function simulate!(
     rng::AbstractRNG, 
     state::AbstractVector, 
     m::MultitypeBranchingProcess, 
-    t,
+    t::Real,
     deathdistribution=m._deathdistribution
 )
     t < zero(t) && error("Argument error: simulation time increment, t, must be non-negative.")
@@ -50,9 +50,9 @@ function simulate!(
     return
 end
 
-simulate!(s::AbstractVector, m::MultitypeBranchingProcess, t, d=m._deathdistribution) = 
+simulate!(s::AbstractVector, m::MultitypeBranchingProcess, t::Real, d=m._deathdistribution) = 
     simulate!(Random.default_rng(), s, m, t, d)
-simulate!(m::MultitypeBranchingProcess, t, d=m._deathdistribution) = 
+simulate!(m::MultitypeBranchingProcess, t::Real, d=m._deathdistribution) = 
     simulate!(Random.default_rng(), m.state, m, t, d)
-simulate!(rng::AbstractRNG, m::MultitypeBranchingProcess, t, d=m._deathdistribution) = 
+simulate!(rng::AbstractRNG, m::MultitypeBranchingProcess, t::Real, d=m._deathdistribution) = 
     simulate!(rng, m.state, m, t, d)
