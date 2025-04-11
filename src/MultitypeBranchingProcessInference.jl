@@ -18,7 +18,8 @@ import Distributions: mean, mean!, logpdf!
 export MTBPParams,
     gettime,
     MTBPParamsSequence,
-    setparams!
+    setparams!,
+    simulate
 
 export MTBPKalmanFilterApproximation,
     ParticleFilterApproximation,
