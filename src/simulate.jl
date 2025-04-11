@@ -1,11 +1,15 @@
-function simulate(bp::MultitypeBranchingProcess, param_seq::MTBPParamsSequence, t::AbstractVector{<:Real})
-    return simulate!(zeros(variabletype(bp), getntypes(bp), length(t)), bp, param_seq, t)
+function MultitypeBranchingProcesses.simulate(rng::AbstractRNG, bp::MultitypeBranchingProcess, param_seq::MTBPParamsSequence, t::AbstractVector{<:Real})
+    return simulate!(rng, zeros(variabletype(bp), getntypes(bp), length(t)), bp, param_seq, t)
 end
 
-function simulate!(path::AbstractArray, bp::MultitypeBranchingProcess, param_seq::MTBPParamsSequence, t::AbstractVector{<:Real})
+function MultitypeBranchingProcesses.simulate!(
+    rng::AbstractRNG, path::AbstractArray, bp::MultitypeBranchingProcess, param_seq::MTBPParamsSequence, t::AbstractVector{<:Real}
+)
     param_time = first(param_seq).time
     @assert param_time <= first(t)  "Sample times are before the first param time"
     @assert first(t)==zero(t) "First sample time must be zero"
+    @assert size(path, 2)==length(t)
+    @assert size(path, 1)==getntypes(bp)
 
     param_idx = nothing
     next_param_time = nothing
