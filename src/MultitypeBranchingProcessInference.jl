@@ -19,7 +19,6 @@ export MTBPParams,
     gettime,
     MTBPParamsSequence,
     setparams!,
-    simulate!,
     simulate
 
 export MTBPKalmanFilterApproximation,
