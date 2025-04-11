@@ -1,4 +1,4 @@
-function MultitypeBranchingProcesses.simulate(rng::AbstractRNG, bp::MultitypeBranchingProcess, param_seq::MTBPParamsSequence, t::AbstractVector{<:Real})
+function simulate(rng::AbstractRNG, bp::MultitypeBranchingProcess, param_seq::MTBPParamsSequence, t::AbstractVector{<:Real})
     return simulate!(rng, zeros(variabletype(bp), getntypes(bp), length(t)), bp, param_seq, t)
 end
 
