@@ -1,28 +1,24 @@
-function simulate(rng::AbstractRNG, bp::MultitypeBranchingProcess, param_seq::MTBPParamsSequence, t::AbstractVector{<:Real})
-    return simulate!(rng, zeros(variabletype(bp), getntypes(bp), length(t)), bp, param_seq, t)
+function simulate(rng::AbstractRNG, bp::MultitypeBranchingProcess, param_seq::MTBPParamsSequence, t::AbstractVector{<:Real}, max_pop_size::Union{Real,Nothing}=nothing)
+    return simulate!(rng, zeros(variabletype(bp), getntypes(bp), length(t)), bp, param_seq, t, max_pop_size)
 end
 
 function MultitypeBranchingProcesses.simulate!(
-    rng::AbstractRNG, path::AbstractArray, bp::MultitypeBranchingProcess, param_seq::MTBPParamsSequence, t::AbstractVector{<:Real}
+    rng::AbstractRNG, path::AbstractArray, bp::MultitypeBranchingProcess, param_seq::MTBPParamsSequence, t::AbstractVector{<:Real}, 
+    max_pop_size::Union{Real,Nothing}=nothing
 )
-    param_time = first(param_seq).time
-    @assert param_time <= first(t)  "Sample times are before the first param time"
-    @assert first(t)==zero(t) "First sample time must be zero"
+    @assert first(param_seq).time <= first(t)  "Sample times are before the first param time"
+    @assert iszero(first(t)) "First sample time must be zero, got $(first(t))"
     @assert size(path, 2)==length(t)
     @assert size(path, 1)==getntypes(bp)
 
-    param_idx = nothing
-    next_param_time = nothing
-    for param_idx in eachindex(param_seq)
-        param_time = param_seq[param_idx].time
-        if param_time >= first(t)
-            param_idx -= 1
-            next_param_time = param_seq[param_idx+1].time
+    param_idx = 1
+    next_param_time = Inf
+    while param_idx < length(param_seq)
+        next_param_time = param_seq[param_idx+1].time
+        if next_param_time > first(t)
             break
         end
-    end
-    if next_param_time===nothing 
-        next_param_time = Inf
+        param_idx += 1
     end
 
     init!(rng, bp)
@@ -36,13 +32,17 @@ function MultitypeBranchingProcesses.simulate!(
         if ti==next_param_time
             param_idx += 1
             setparams!(bp, param_seq[param_idx])
-            next_param_time = param_seq[param_idx].time
+            next_param_time = param_idx < length(param_seq) ? param_seq[param_idx+1].time : Inf
         elseif ti > next_param_time
             error("Parameter times must coincide with sample times")
         end
         dt = ti - prevt
         simulate!(rng, bp, dt)
         path[:,i] .= bp.state
+        if max_pop_size!==nothing && any(x -> x > max_pop_size, bp.state)
+            path[:,i+1:end] .= -1
+            break
+        end
     end
     return path
 end
