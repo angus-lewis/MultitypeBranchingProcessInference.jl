@@ -41,6 +41,9 @@ function logpdf!(
         # then we can save some computations
         use_prev_iter_params = (!updateparams) && (dt==prevdt)
         
+        # compute the contribution to the loglikelihood for this obs.
+        # internally integrates/updates the bp model from the previous timestamp
+        # to the timestamp of the current obs
         loglikelihood += iterate!(approx, model, dt, obs_value, iteration, use_prev_iter_params, customitersetup)
         
         if isinf(loglikelihood) && loglikelihood < zero(loglikelihood)

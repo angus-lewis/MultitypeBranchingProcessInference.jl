@@ -1,10 +1,14 @@
-function simulate(rng::AbstractRNG, bp::MultitypeBranchingProcess, param_seq::MTBPParamsSequence, t::AbstractVector{<:Real}, max_pop_size::Union{Real,Nothing}=nothing)
-    return simulate!(rng, zeros(variabletype(bp), getntypes(bp), length(t)), bp, param_seq, t, max_pop_size)
+function simulate(rng::AbstractRNG, bp::MultitypeBranchingProcess, 
+    param_seq::MTBPParamsSequence, t::AbstractVector{<:Real}, 
+    initial_state=:sample, max_pop_size::Union{Real,Nothing}=nothing
+)
+    return simulate!(rng, zeros(variabletype(bp), getntypes(bp), length(t)), bp, param_seq, t, initial_state, max_pop_size)
 end
 
 function MultitypeBranchingProcesses.simulate!(
-    rng::AbstractRNG, path::AbstractArray, bp::MultitypeBranchingProcess, param_seq::MTBPParamsSequence, t::AbstractVector{<:Real}, 
-    max_pop_size::Union{Real,Nothing}=nothing
+    rng::AbstractRNG, path::AbstractArray, bp::MultitypeBranchingProcess, 
+    param_seq::MTBPParamsSequence, t::AbstractVector{<:Real}, 
+    initial_state=:sample, max_pop_size::Union{Real,Nothing}=nothing
 )
     @assert first(param_seq).time <= first(t)  "Sample times are before the first param time"
     @assert iszero(first(t)) "First sample time must be zero, got $(first(t))"
@@ -23,26 +27,33 @@ function MultitypeBranchingProcesses.simulate!(
     end
     setparams!(bp, param_seq[param_idx])
 
-    init!(rng, bp)
+    if initial_state===:sample 
+        init!(rng, bp)
+    else
+        bp.state .= initial_state
+    end
     path[:,1] .= bp.state
 
     prevt = first(t)
     i = 1
     for ti in Iterators.drop(t, 1)
         i += 1
-        if ti==next_param_time
-            param_idx += 1
-            setparams!(bp, param_seq[param_idx])
-            next_param_time = param_idx < length(param_seq) ? param_seq[param_idx+1].time : Inf
-        elseif ti > next_param_time
-            error("Parameter times must coincide with sample times")
-        end
+        # simulate BP for dt amount of time
         dt = ti - prevt
         simulate!(rng, bp, dt)
         path[:,i] .= bp.state
         if max_pop_size!==nothing && any(x -> x > max_pop_size, bp.state)
             path[:,i+1:end] .= -1
             break
+        end
+
+        # update the bp parameters if they change
+        if ti==next_param_time
+            param_idx += 1
+            setparams!(bp, param_seq[param_idx])
+            next_param_time = param_idx < length(param_seq) ? param_seq[param_idx+1].time : Inf
+        elseif ti > next_param_time
+            error("Parameter times must coincide with sample times")
         end
     end
     return path
@@ -78,6 +89,11 @@ function meanpath!(path::AbstractArray,
     i = 1
     for ti in Iterators.drop(t, 1)
         i += 1
+        dt = ti - prevt
+        moments!(op, bp, dt)
+        @views mean!(path[:,i], op, path[:,i-1])
+
+        # update the bp parameters if they change
         if ti==next_param_time
             param_idx += 1
             setparams!(bp, param_seq[param_idx])
@@ -85,9 +101,6 @@ function meanpath!(path::AbstractArray,
         elseif ti > next_param_time
             error("Parameter times must coincide with sample times")
         end
-        dt = ti - prevt
-        moments!(op, bp, dt)
-        @views mean!(path[:,i], op, path[:,i-1])
     end
     return path
 end
