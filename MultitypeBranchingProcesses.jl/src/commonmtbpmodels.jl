@@ -157,7 +157,6 @@ function SEIR(
     if immigration_rates !== nothing
         total_immigration_rate = sum(immigration_rates)
         if total_immigration_rate==zero(total_immigration_rate)
-            # ensure cdf is proper
             immigration_cdf = collect(
                 Iterators.drop(
                     range(
