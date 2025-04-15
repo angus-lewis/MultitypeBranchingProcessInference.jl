@@ -3,11 +3,6 @@ function simulate(rng::AbstractRNG, bp::MultitypeBranchingProcess,
     initial_state=:sample, max_pop_size::Union{Real,Nothing}=nothing
 )
     return simulate!(rng, zeros(variabletype(bp), getntypes(bp), length(t)), bp, param_seq, t, initial_state, max_pop_size)
-function simulate(rng::AbstractRNG, bp::MultitypeBranchingProcess, 
-    param_seq::MTBPParamsSequence, t::AbstractVector{<:Real}, 
-    initial_state=:sample, max_pop_size::Union{Real,Nothing}=nothing
-)
-    return simulate!(rng, zeros(variabletype(bp), getntypes(bp), length(t)), bp, param_seq, t, initial_state, max_pop_size)
 end
 
 function MultitypeBranchingProcesses.simulate!(
