@@ -33,16 +33,16 @@ datasetnames = ["dow"]
 nburnin = 231000
 paramnames = vcat(
     [:L; :L0; :k; :x0],
-    [Symbol("R_0_$i") for i in 1:11], 
+    [Symbol("R_0_$i") for i in 1:9], 
     [:LL]
 )
 
 samples = read_datasets(filenames, datasetnames, nburnin, paramnames)
 
 info_filenames = [
-    "data/_dow_expcovfn_vic_covid_kalman.model_info.f64_array.bin"
+    "data/dow_expcovfn_vic_covid_kalman_state.model_info.f64_array.bin"
 ]
-ntypes = 5
+ntypes = 4
 info_paramnames = vcat(
     [Symbol("State_$i") for i in 1:ntypes], 
     [Symbol("Cov(State_$i, State_$j)") for i in 1:ntypes, j in 1:ntypes][:], 
