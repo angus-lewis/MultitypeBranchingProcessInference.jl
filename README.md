@@ -15,3 +15,13 @@ julia> Pkg.develop([
 This will probably put the repo in ~/.julia/dev/. See Pkg.develop documentation for more.
 
 You can then use using/import to use the package, or work on the package itself in ~/.julia/dev/.
+
+Alternatively, git clone the repo then navigate to the repo so that you are in the MultitypeBranchingProcessInference.jl directory.
+
+Then run 
+
+    % julia --project=. "import Pkg; Pkg.build()"
+
+To run the examples you may need to also cd into examples/ and run 
+
+    %julia --project=. deps/build.jl

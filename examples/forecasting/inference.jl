@@ -63,7 +63,7 @@ function main(argv)
         (length(epidemicmodel.info_cache), nsamples)
     )
 
-    MetropolisHasting.close_ios(mh_config)
+    MetropolisHastings.close_ios(mh_config)
 
     println()
     return

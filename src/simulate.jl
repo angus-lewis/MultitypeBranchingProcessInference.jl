@@ -40,6 +40,7 @@ function MultitypeBranchingProcesses.simulate!(
         i += 1
         # simulate BP for dt amount of time
         dt = ti - prevt
+        prevt = ti
         simulate!(rng, bp, dt)
         path[:,i] .= bp.state
         if max_pop_size!==nothing && any(x -> x > max_pop_size, bp.state)
@@ -90,6 +91,7 @@ function meanpath!(path::AbstractArray,
     for ti in Iterators.drop(t, 1)
         i += 1
         dt = ti - prevt
+        prevt = ti
         moments!(op, bp, dt)
         @views mean!(path[:,i], op, path[:,i-1])
 
