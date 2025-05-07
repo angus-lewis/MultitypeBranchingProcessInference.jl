@@ -57,7 +57,11 @@ function MHConfig(
             error("MH IO file does not exist: $(samples_file).")
         end
     else
-        if isfile(samples_file) || isfile(info_file) || isfile(model_info_file)
+        if (
+            (samples_file!="devnull" && isfile(samples_file)) 
+            || (info_file!="devnull" && info_file!="stdout" && isfile(info_file))
+            || (model_info_file!="devnull" && isfile(model_info_file)
+        )
             error("MH IO file(s) already exist\n    $(samples_file)\n    $(info_file)\n    $(model_info_file).")
         end
     end
