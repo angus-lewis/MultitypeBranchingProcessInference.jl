@@ -413,7 +413,7 @@ function metropolis_hastings(rng::AbstractRNG, model, prior, proposal, mh_config
     header = (mh_config.nparams+1, samples_count)
     write_samples && write_binary_array_file_header(samples_io, header)
 
-    close_io && close_ios(mh_config)
+    write_samples && close_io && close_ios(mh_config)
 
     if write_samples
         return samples_count
