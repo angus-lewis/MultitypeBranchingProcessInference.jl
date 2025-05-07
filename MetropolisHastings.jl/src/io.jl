@@ -1,3 +1,6 @@
+function skip_binary_array_file_header(io::Base.DevNull, dim)
+    return 
+end
 function skip_binary_array_file_header(io, dim)
     @assert position(io)==0 "Expected io to be at the start of the file"
     write(io, Int64(dim))
@@ -5,6 +8,9 @@ function skip_binary_array_file_header(io, dim)
         write(io, Int64(0))
     end
     return 
+end
+function write_binary_array_file_header(ioio::Base.DevNull, array_size)
+    return
 end
 function write_binary_array_file_header(io, array_size)
     seekstart(io)
