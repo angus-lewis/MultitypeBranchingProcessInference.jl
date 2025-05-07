@@ -5,22 +5,28 @@ mutable struct SamplesBuffer{T}
     const buffersize::Int
 end
 
-function SamplesBuffer(init_values, buffersize, ll=nothing)
-    buffer = Array{eltype(init_values), 2}(undef, length(init_values)+(ll!==nothing), buffersize)
+function SamplesBuffer(init_value, buffersize, ll=nothing, empty=false)
+    buffer = Array{eltype(init_value), 2}(undef, length(init_value)+(ll!==nothing), buffersize)
+
+    if empty
+        return SamplesBuffer(
+            buffer,
+            0,
+            0,
+            buffersize,
+        )
+    end
+
     if ll===nothing 
-        for col in eachcol(buffer)
-            col .= init_values
-        end
+        buffer[:,1] .= init_value
     else
-        for col in eachcol(buffer)
-            col[1:end-1] .= init_values
-            col[end] = ll
-        end
+        buffer[1:end-1,1] .= init_value
+        buffer[end,1] = ll
     end
     return SamplesBuffer(
         buffer,
-        0,
-        0,
+        1,
+        1,
         buffersize,
     )
 end
@@ -67,15 +73,17 @@ function isbufferfull(buffer)
     return buffer.bufferidx >= buffer.buffersize
 end
 
-function writebuffer!(io, buffer)
-    write(io, buffer.buffer)
+function writebuffer!(io::IO, buffer)
+    @views write(io, buffer.buffer[:, 1:buffer.bufferidx])
     buffer.bufferidx = 0
     buffer.accepted_count = 0
     return 
 end
 
-function writepartialbuffer!(io, buffer)
-    write(io, buffer.buffer[:, 1:buffer.bufferidx])
+function writebuffer!(out::SamplesBuffer, buffer)
+    for colix in 1:buffer.bufferidx
+        @views addsample!(out, buffer.buffer[:,colix])
+    end
     buffer.bufferidx = 0
     buffer.accepted_count = 0
     return 

@@ -61,12 +61,20 @@ function MHConfig(
             error("MH IO file(s) already exist\n    $(samples_file)\n    $(info_file)\n    $(model_info_file).")
         end
     end
-    samples_io = open(samples_file, "a")
-    info_io = open(info_file, "a")
+    samples_io = if samples_file=="devnull"
+        devnull
+    else
+        open(samples_file, "a")
+    end
+    info_io = if info_file=="devnull"
+        devnull
+    elseif info_file=="stdout"
+        stdout
+    else
+        open(info_file, "a")
+    end
     model_info_io = if model_info_file=="devnull"
         devnull
-    elseif model_info_file=="stdout"
-        stdout
     else
         open(model_info_file, "a")
     end
@@ -129,18 +137,20 @@ function _printinfo(verbose, info_io, samples_count, samples_buffer, start_time_
     return 
 end
 
-function _printinfo_endstatus(verbose, info_io, start_time_sec, mh_config, samples_count, maxsamples, end_of_samples_pos, eof_pos, totalinfiniteloglikelihoodscount, unique_samples_count)
+function _printinfo_endstatus(verbose, info_io, start_time_sec, mh_config, samples_count, maxsamples, samples_io, write_samples, totalinfiniteloglikelihoodscount, unique_samples_count)
     if !verbose
         return 
     end
 
-    header_size = length((mh_config.nparams, samples_count))+1 # add 1 for dim field in file which is not part of header
-    header_size_nbytes = header_size*sizeof(Int64)
+    if write_samples 
+        header_size = length((mh_config.nparams, samples_count))+1 # add 1 for dim field in file which is not part of header
+        header_size_nbytes = header_size*sizeof(Int64)
     
-    samples_size_nbytes = end_of_samples_pos - header_size_nbytes
-    samples_size = (samples_size_nbytes/sizeof(eltype(mh_config.init_sample))/mh_config.nparams)
-    
-    total_size_nbytes = samples_size_nbytes + header_size_nbytes
+        end_of_samples_pos, eof_pos = position(samples_io), position(seekend(samples_io))
+        samples_size_nbytes = end_of_samples_pos - header_size_nbytes
+        samples_size = (samples_size_nbytes/sizeof(eltype(mh_config.init_sample))/mh_config.nparams)
+        total_size_nbytes = samples_size_nbytes + header_size_nbytes
+    end
 
     println(info_io, "[INFO] END STATUS")
     println(info_io, "[INFO]     current time $(Dates.now()).")
@@ -150,9 +160,9 @@ function _printinfo_endstatus(verbose, info_io, start_time_sec, mh_config, sampl
     println(info_io, "[INFO]     number of unique samples: $(unique_samples_count).")
     println(info_io, "[INFO]     number of proposed samples with infinite loglikelihood: $(totalinfiniteloglikelihoodscount)")
     println(info_io, "[INFO]     samples filesize:")
-    println(info_io, "[INFO]         header: $header_size ($header_size_nbytes bytes).")
-    println(info_io, "[INFO]         samples: $samples_size ($samples_size_nbytes bytes).")
-    println(info_io, "[INFO]         total: $total_size_nbytes bytes (eof at $(eof_pos)).")
+    write_samples && println(info_io, "[INFO]         header: $header_size ($header_size_nbytes bytes).")
+    write_samples && println(info_io, "[INFO]         samples: $samples_size ($samples_size_nbytes bytes).")
+    write_samples && println(info_io, "[INFO]         total: $total_size_nbytes bytes (eof at $(eof_pos)).")
     printconfig(info_io, mh_config)
     return 
 end
@@ -210,7 +220,8 @@ function check_init_params(init_params, logpdf_fn::Function)
     return 
 end
 
-function metropolis_hastings(rng::AbstractRNG, loglikelihood_fn::Function, prior_logpdf_fn::Function, symmetric_proposal_distribution, mh_config::MHConfig, close_io=true)
+# TODO: deprecate this implementation
+function metropolis_hastings(rng::AbstractRNG, loglikelihood_fn::Function, prior_logpdf_fn::Function, symmetric_proposal_distribution, mh_config::MHConfig, close_io::Bool=true)
     # set up parameters in cases when we do or do not continue from a file
     samples_count = init_sample_setup!(mh_config)
     maxsamples = samples_count + mh_config.maxiters
@@ -271,7 +282,7 @@ function metropolis_hastings(rng::AbstractRNG, loglikelihood_fn::Function, prior
     end
     _printinfo(mh_config.verbose, mh_config.info_io, samples_count, samples_buffer, start_time_sec, mh_config.max_time_sec, maxsamples, current_loglikelihood_value, infiniteloglikelihoodscount)
     # write remaing samples from buffer
-    writepartialbuffer!(mh_config.samples_io, samples_buffer)
+    writebuffer!(mh_config.samples_io, samples_buffer)
     _printinfo_endstatus(mh_config.verbose, mh_config.info_io, start_time_sec, mh_config, samples_count, maxsamples, position(mh_config.samples_io), position(seekend(mh_config.samples_io)), totalinfiniteloglikelihoodscount, unique_samples_count)
     # now that the number of samples is known, add the file header
     header = (mh_config.nparams+1, samples_count)
@@ -324,7 +335,7 @@ function write_model_info(io::IO, model, isacc::Bool)
     error("Implementation specific model info writer not found, perhaps it has not been implemented.")
 end
 
-function metropolis_hastings(rng::AbstractRNG, model, prior, proposal, mh_config::MHConfig, close_io=true)
+function metropolis_hastings(rng::AbstractRNG, model, prior, proposal, mh_config::MHConfig, write_samples::Bool=true, close_io::Bool=true)
     # set up parameters in cases when we do or do not continue from a file
     samples_count = init_sample_setup!(mh_config)
     maxsamples = samples_count + mh_config.maxiters
@@ -345,12 +356,18 @@ function metropolis_hastings(rng::AbstractRNG, model, prior, proposal, mh_config
     # allocate space for samples
     proposed_sample = Vector{eltype(mh_config.init_sample)}(undef, mh_config.nparams)
     samples_buffer = SamplesBuffer(mh_config.init_sample, mh_config.samples_buffer_size, current_log_accept_ratio)
+    samples_count += 1
 
     # the file is empty and we need to leave space for the header
-    if position(mh_config.samples_io)==0
-        skip_binary_array_file_header(mh_config.samples_io, length(size(samples_buffer.buffer)))
-    end 
-    # else, we assume there is already space for the header
+    if write_samples
+        samples_io = mh_config.samples_io
+        if position(mh_config.samples_io)==0
+            skip_binary_array_file_header(samples_io, length(size(samples_buffer.buffer)))
+        end 
+        # else, we assume there is already space for the header
+    else
+        samples_io = SamplesBuffer(mh_config.init_sample, mh_config.maxiters, current_log_accept_ratio, true)
+    end
     
     total_inf_loglike_count = 0
     unique_samples_count = 0
@@ -385,20 +402,23 @@ function metropolis_hastings(rng::AbstractRNG, model, prior, proposal, mh_config
             unique_samples_count += samples_buffer.accepted_count
 
             adaptmaybe!(proposal, mh_config, mh_config.info_io, samples_count, samples_buffer)
-            writebuffer!(mh_config.samples_io, samples_buffer)
+            writebuffer!(samples_io, samples_buffer)
         end
     end
     _printinfo(mh_config.verbose, mh_config.info_io, samples_count, samples_buffer, start_time_sec, mh_config.max_time_sec, maxsamples, current_loglike_value, inf_loglike_count)
     # write remaing samples from buffer
-    writepartialbuffer!(mh_config.samples_io, samples_buffer)
-    _printinfo_endstatus(mh_config.verbose, mh_config.info_io, start_time_sec, mh_config, samples_count, maxsamples, position(mh_config.samples_io), position(seekend(mh_config.samples_io)), total_inf_loglike_count, unique_samples_count)
-    # now that the number of samples is known, add the file header
+    writebuffer!(samples_io, samples_buffer)
+    _printinfo_endstatus(mh_config.verbose, mh_config.info_io, start_time_sec, mh_config, samples_count, maxsamples, samples_io, write_samples, total_inf_loglike_count, unique_samples_count)
+    # now that the number of samples is known, add the file header, nrows=nparams+1 to include the loglike
     header = (mh_config.nparams+1, samples_count)
-    write_binary_array_file_header(mh_config.samples_io, header)
+    write_samples && write_binary_array_file_header(samples_io, header)
 
     close_io && close_ios(mh_config)
 
-    return samples_count
+    if write_samples
+        return samples_count
+    end
+    return samples_io.buffer
 end
 
 end
