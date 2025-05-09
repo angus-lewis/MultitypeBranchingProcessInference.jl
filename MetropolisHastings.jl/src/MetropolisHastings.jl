@@ -58,7 +58,7 @@ function MHConfig(
         end
     else
         if (
-            (samples_file!="devnull" && isfile(samples_file)) 
+            (samples_file!="devnull" && isfile(samples_file))
             || (info_file!="devnull" && info_file!="stdout" && isfile(info_file))
             || (model_info_file!="devnull" && isfile(model_info_file))
         )
