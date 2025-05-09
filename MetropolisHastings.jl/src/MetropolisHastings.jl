@@ -58,9 +58,9 @@ function MHConfig(
         end
     else
         if (
-            (samples_file!="devnull" && isfile(samples_file)) 
+            (samples_file!="devnull" && isfile(samples_file))
             || (info_file!="devnull" && info_file!="stdout" && isfile(info_file))
-            || (model_info_file!="devnull" && isfile(model_info_file)
+            || (model_info_file!="devnull" && isfile(model_info_file))
         )
             error("MH IO file(s) already exist\n    $(samples_file)\n    $(info_file)\n    $(model_info_file).")
         end
@@ -391,10 +391,10 @@ function metropolis_hastings(rng::AbstractRNG, model, prior, proposal, mh_config
             current_sample = addsample!(samples_buffer, proposed_sample, proposed_log_accept_ratio)
             setstate!(proposal, current_sample)
             current_log_accept_ratio, current_loglike_value = proposed_log_accept_ratio, proposed_loglike_value
-            do_write_model_info && write_model_info(mh_config.model_info_io, model, true)
+            write_samples && do_write_model_info && write_model_info(mh_config.model_info_io, model, true)
         else 
             repeatsample!(samples_buffer)
-            do_write_model_info && write_model_info(mh_config.model_info_io, model, false)
+            write_samples && do_write_model_info && write_model_info(mh_config.model_info_io, model, false)
         end
 
         # write buffer 
