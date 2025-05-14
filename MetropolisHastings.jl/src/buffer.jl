@@ -73,16 +73,46 @@ function isbufferfull(buffer)
     return buffer.bufferidx >= buffer.buffersize
 end
 
-function writebuffer!(io::IO, buffer)
-    @views write(io, buffer.buffer[:, 1:buffer.bufferidx])
+function writebuffer!(io::IO, buffer, samples_count, thin)
+    prev_buffer_last_n_skipped = ((thin-1)+samples_count - buffer.bufferidx)%thin
+    first_ix = thin - prev_buffer_last_n_skipped
+    @views write(io, buffer.buffer[:, first_ix:thin:buffer.bufferidx])
     buffer.bufferidx = 0
     buffer.accepted_count = 0
     return 
 end
 
-function writebuffer!(out::SamplesBuffer, buffer)
-    for colix in 1:buffer.bufferidx
+function writebuffer!(io::Base.DevNull, buffer, samples_count, thin)
+    buffer.bufferidx = 0
+    buffer.accepted_count = 0
+    return 
+end
+
+function writebuffer!(out::SamplesBuffer, buffer, samples_count, thin)
+    prev_buffer_last_n_skipped = ((thin-1)+samples_count - buffer.bufferidx)%thin
+    first_ix = thin - prev_buffer_last_n_skipped
+    for colix in first_ix:thin:buffer.bufferidx
         @views addsample!(out, buffer.buffer[:,colix])
+    end
+    buffer.bufferidx = 0
+    buffer.accepted_count = 0
+    return 
+end
+
+function writebuffer!(out::AbstractMatrix, buffer, samples_count, thin)
+    prev_buffer_last_n_skipped = ((thin-1)+samples_count - buffer.bufferidx)%thin
+    first_ix = thin - prev_buffer_last_n_skipped
+    buffercols = first_ix:thin:buffer.bufferidx
+
+    if samples_count <= buffer.bufferidx
+        out_ix = 0
+    else
+        out_ix = (samples_count - buffer.bufferidx - 1)÷thin + 1
+    end 
+
+    for colix in buffercols
+        out_ix += 1
+        @views out[:, out_ix] .= buffer.buffer[:,colix]
     end
     buffer.bufferidx = 0
     buffer.accepted_count = 0
