@@ -93,7 +93,7 @@ function characteristicmatrix!(m, bp)
         firstmoment!(@view(m[:, typeidx]), bp.progeny[typeidx])
         m[:, typeidx] .*= bp.rates[typeidx]
     end
-    return
+    return m
 end
 
 function getcharacteristicmatrix(op)

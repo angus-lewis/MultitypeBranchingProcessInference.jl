@@ -30,13 +30,21 @@ end
 
 params = YAML.load_file(joinpath(pwd(), ARGS[1]))
 
+if (params["E_immigration_rate"] == zero(params["E_immigration_rate"]) 
+    && params["I_immigration_rate"] == zero(params["I_immigration_rate"]))
+
+    immigration = nothing
+else
+    immigration = [params["E_immigration_rate"], params["I_immigration_rate"]]
+end
+
 mtbp = StateSpaceModels.SEIR(
     1, 1,
     params["infection_rate"], params["exposed_stage_chage_rate"], params["infectious_stage_chage_rate"], 
     params["observation_probability"], 
     nothing, # notification rate
-    [params["E_immigration_rate"], params["I_immigration_rate"]],
-    [params["initial_E"], params["initial_I"], params["initial_O"], 1],
+    immigration,
+    [params["initial_E"], params["initial_I"], params["initial_O"]],
 )
 
 particles = readparticles(joinpath(pwd(), ARGS[2]))
@@ -61,18 +69,23 @@ function makeplot(particles, mtbp)
     plot!(xlabel="Exposed", ylabel="Infectious")
     
     scattertimes = [20; 60; 100]
-    colours = [:red, :blue, :green]
+    pastel_blue = RGB(0.7, 0.8, 1.0)
+    pastel_green = RGB(0.7, 1.0, 0.7)
+    pastel_red = RGB(1.0, 0.7, 0.7)
+    colours = [pastel_blue, pastel_green, pastel_red]
     i = 1
     for t in scattertimes
-        scatter!(particles[t][:,1], particles[t][:,2], color=colours[i], label="Simulation t=$t", markersize=2)
+        scatter!(particles[t][:,1], particles[t][:,2], color=colours[i], label="t=$t", markersize=3)
         i += 1
     end
+    i = 1
     for t in scattertimes
         moments!(moments, mtbp, t)
         mu = mean(moments, mtbp.state)
         sigma = variance_covariance(moments, mtbp.state)
-        covellipse!(mu[1:2], sigma[1:2,1:2]; n_std = 1, color=:lightblue, label=nothing, alpha=0.4)
-        covellipse!(mu[1:2], sigma[1:2,1:2]; n_std = 2, color=:lightblue, label=nothing, alpha=0.4)
+        # covellipse!(mu[1:2], sigma[1:2,1:2]; n_std = 1, color=:lightblue, label=nothing, alpha=0.4)
+        covellipse!(mu[1:2], sigma[1:2,1:2]; n_std = 2, color=colours[i], label=nothing, alpha=0.4)
+        i += 1
     end
 
     mu_series = zeros(length(particles), mtbp.ntypes+1)
@@ -82,16 +95,14 @@ function makeplot(particles, mtbp)
         moments!(moments, mtbp, t)
         mu = zeros(paramtype(mtbp), getntypes(mtbp))
         mean!(mu, moments, mtbp.state)
-        vcov = zeros(paramtype(mtbp), getntypes(mtbp), getntypes(mtbp))
-        variance_covariance!(vcov, moments, mtbp.state)
         mu_series[count,1] = t
         mu_series[count, 2:end] = mu
         if t in scattertimes
-            scatter!([mu_series[count, 2]], [mu_series[count, 3]], markersize=10, markershape=:+, color=:lightblue, label=nothing)
-            annotate!([mu_series[count, 2]], [mu_series[count, 3]+sqrt(t)*6], "t=$t")
+            scatter!([mu_series[count, 2]], [mu_series[count, 3]], markersize=10, markershape=:+, color=:black, label=nothing)
+            # annotate!([mu_series[count, 2]], [mu_series[count, 3]], "t=$t")
         end
     end
-    plot!(mu_series[:,2], mu_series[:,3], color=:lightblue, label=L"E[z(t)]", linewidth=2)
+    plot!(mu_series[:,2], mu_series[:,3], color=:black, label=L"E[z(t)]", linewidth=2)
     
     return plot!(grid=nothing)
 end
