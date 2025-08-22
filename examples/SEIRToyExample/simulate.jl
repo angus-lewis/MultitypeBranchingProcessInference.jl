@@ -1,7 +1,6 @@
 using Random
-using StatsPlots
 using YAML
-
+using LinearAlgebra
 using MultitypeBranchingProcessInference
 
 function writeparticles(io, particles::Vector{Vector{Int64}}, t::Int64)
@@ -25,13 +24,23 @@ function main(
     rng = Random.Xoshiro()
     Random.seed!(rng, seed)
 
+    if E_immigration_rate == zero(E_immigration_rate) && I_immigration_rate == zero(I_immigration_rate)
+        immigration = nothing
+    else
+        immigration = [E_immigration_rate, I_immigration_rate]
+    end
+
     mtbp = SEIR(1, 1,
         infection_rate, exposed_stage_chage_rate, infectious_stage_chage_rate, 
         observation_probablity, 
         nothing, # notification rate
-        [E_immigration_rate, I_immigration_rate], 
-        Int64[initial_E, initial_I, initial_O, 1],
+        immigration, 
+        Int64[initial_E, initial_I, initial_O],
     )
+
+    omega = zeros(getntypes(mtbp), getntypes(mtbp))
+    display(characteristicmatrix!(omega,mtbp))
+    display(eigen(omega))
 
     particles = ParticleStore(Float64, mtbp.state, n_particles)
     initstate!(particles, mtbp.initial_state)
