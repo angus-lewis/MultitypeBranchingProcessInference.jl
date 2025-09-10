@@ -37,7 +37,7 @@ function main(argv)
         error("analysis.jl program expects 2 or more arguments \
                \n    1. config file name.\
                \n    2. a string of the form datasetname=filename where\
-                        datasetname is a name to be used in plottinr and filename is a\
+                        datasetname is a name to be used in plotting and filename is a\
                         the name of a file containing samples.")
     end
 
@@ -52,7 +52,7 @@ function main(argv)
     observations = vcat(observations...)
 
     paramnames = [
-        :T_E, :T_I, :R_0_1, :R_0_2, :R_0_3, :R_0_4, :R_0_5, :R_0_6, :R_0_7, :R_0_8, :R_0_9, :R_0_10, :R_0_11, :R_0_12, :R_0_13, :R_0_14, :LL
+        :R_0_1, :R_0_2, :R_0_3, :R_0_4, :R_0_5, :R_0_6, :R_0_7, :R_0_8, :R_0_9, :R_0_10, :R_0_11, :R_0_12, :R_0_13, :R_0_14, :LL
     ]
 
     chains_ = datasetstochains(samples, paramnames)
@@ -74,25 +74,25 @@ function main(argv)
 
     # param inference plot
     R0idx = [:R_0_1, :R_0_2, :R_0_3, :R_0_4, :R_0_5, :R_0_6, :R_0_7, :R_0_8, :R_0_9, :R_0_10, :R_0_11, :R_0_12, :R_0_13, :R_0_14]
-    p = plot(size=(700,400))
-    kdes = []
-    max_kde = -Inf
+    p = plot(size=(600,400))
+    # kdes = []
+    # max_kde = -Inf
     for i in eachindex(R0idx)
-        # violin!(p, [(i-1)*0.5], chains_[datafilename][R0idx[i]][:];
-        #     ylims=(0, length(R0idx)/2-0.5), color=:red, alpha=0.5, ylabel=L"R_0", side=:right,
-        #     label=i==firstindex(R0idx) ? "Density" : false, legend=:topleft)
-        kdeR0 = kde(chains_[datafilename][R0idx[i]][:])
-        push!(kdes, [kdeR0.x, kdeR0.density])
-        max_kde = max(max_kde, maximum(kdeR0.density))
-    end
-    for i in eachindex(R0idx)
-        plot!(p, (i-1)*0.5 .+ kdes[i][2]./max_kde*0.5, kdes[i][1];
-            ylims=(0, length(R0idx)/2-0.5), color=:black, label=false)
-        plot!(p, (i-1)*0.5 .+ kdes[i][2]./max_kde*0.5, kdes[i][1];
-            ylims=(0, length(R0idx)/2-0.5), fill=true, color=:red, alpha=0.5, ylabel=L"R_0", side=:right,
+        violin!(p, [(i-1)*0.5], chains_[datafilename][R0idx[i]][:];
+            ylims=(0, length(R0idx)/2-0.5), color=:red, alpha=0.5, ylabel=L"R_0", side=:right,
             label=i==firstindex(R0idx) ? "Density" : false, legend=:topleft)
+        # kdeR0 = kde(chains_[datafilename][R0idx[i]][:])
+        # push!(kdes, [kdeR0.x, kdeR0.density])
+        # max_kde = max(max_kde, maximum(kdeR0.density))
     end
-    x = range(0, length(R0idx)/2+1/7; length=101)
+    # for i in eachindex(R0idx)
+    #     plot!(p, (i-1)*0.5 .+ kdes[i][2]./max_kde*0.5, kdes[i][1];
+    #         ylims=(0, length(R0idx)/2-0.5), color=:black, label=false)
+    #     plot!(p, (i-1)*0.5 .+ kdes[i][2]./max_kde*0.5, kdes[i][1];
+    #         ylims=(0, length(R0idx)/2-0.5), fill=true, color=:red, alpha=0.5, ylabel=L"R_0", side=:right,
+    #         label=i==firstindex(R0idx) ? "Density" : false, legend=:topleft)
+    # end
+    x = range(0, length(R0idx)/2, length=length(observations)+1)
     x = repeat(x, inner=2)
     x = x[2:end-1]
     y = repeat(observations, inner=2)
@@ -102,7 +102,7 @@ function main(argv)
     for x in 0.5:0.5:(length(R0idx)/2-0.5)
         plot!(p, [x;x], [ylims_[1]; ylims_[2]]; color=:grey, linestyle=:dash, label=false)
     end
-    plot!(p, xlims=(-0.5/7,7+1.5/7))
+    plot!(p, xlims=(-0.5/7,7+0.5/7))
     plot!(p, xticks=(0:0.5:7, ["$(7*(i-1))" for i in 1:length(R0idx)+1]), xlabel="Days")
     plot!(p, grid=:off)
     

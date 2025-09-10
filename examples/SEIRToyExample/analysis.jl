@@ -3,6 +3,7 @@ using YAML
 using Distributions
 using LaTeXStrings
 using MultitypeBranchingProcessInference
+using LinearAlgebra
 
 default(; fontfamily="Bookman")
 
@@ -133,7 +134,51 @@ end
 qq = makeqq(particles, mtbp)
 savefig(qq, joinpath("figs", "SEIRToyModelQQPlot.pdf"))
 
-tmp = joinpath(pwd(), "gr-temp")
-println("Press any key to delete temporary directory $(tmp) and contents.")
-readline(stdin)
-rm(tmp; force=true, recursive=true)
+function makets(particles, mtbp)
+    moments = MTBPMomentsOperator(mtbp)
+    init!(mtbp)
+
+    sorted_keys = sort(collect(keys(particles)))
+    series = zeros(length(particles), size(particles[1], 1)+1)
+    count = 0
+    for t in sorted_keys
+        count += 1
+        series[count, 1] = t
+        series[count, 2:end] = particles[t][:,end]
+    end
+    pastel_red = RGB(1.0, 0.7, 0.7)
+    p1 = plot(series[2:end,1], diff(series[:,2:end], dims=1); xlabel=L"Time", ylabel=L"New"*" "*L"cases:"*" "*L"z_3(t)-z_3(t-1)", label=false, color=:grey, alpha=0.3, legend=:topleft, grid=nothing)
+    p1 = scatter!(p1, series[2:end,1], diff(series[:,2], dims=1); label=L"Sample"*" "*L"path", color=:grey)
+
+    mu_series = zeros(length(particles), mtbp.ntypes+1)
+    sigma_series = zeros(length(particles), mtbp.ntypes+1)
+    count = 0
+    t0 = first(sorted_keys)
+    for t in sorted_keys
+        count += 1
+
+        moments!(moments, mtbp, t)
+        mu = zeros(paramtype(mtbp), getntypes(mtbp))
+        mean!(mu, moments, mtbp.state)
+        mu_series[count,1] = t
+        mu_series[count, 2:end] = mu
+
+        moments!(moments, mtbp, t-t0)
+        t0 = t
+        cov = zeros(paramtype(mtbp), getntypes(mtbp), getntypes(mtbp))
+        mu[end] = 0
+        variance_covariance!(cov, moments, mu)
+        sigma_series[count,1] = t
+        sigma_series[count, 2:end] = sqrt.(diag(cov))
+    end
+    plot!(p1, mu_series[2:end, 1], diff(mu_series[:,end]), 
+        ribbon = sigma_series[2:end, end],
+        label=L"E[z_3(t)-z_3(t-1)]", color=:blue, linewidth=2, fillalpha=0.2)
+    # plot!(p1, sigma_series[2:end, 1], diff(sigma_series[:,end]), label=false, color=:lightblue, linewidth=2)
+    # plot!(p2, mu_series[:,1], mu_series[:,3]; label=L"E[z_2(t)]", color=:black, linewidth=2)
+
+    return plot(p1; layout=(2,1), size=(600,400))
+end
+
+ts = makets(particles, mtbp)
+savefig(ts, joinpath("figs", "SEIRToyModelTSPlot.pdf"))

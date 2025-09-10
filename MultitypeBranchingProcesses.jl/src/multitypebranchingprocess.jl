@@ -109,7 +109,11 @@ function Base.show(io::IO, mtbp::MultitypeBranchingProcess)
     println(io, "Multitype Branching Process")
     println(io, "Number of types: $(getntypes(mtbp))")
     println(io, "State prototype: $(getstate(mtbp))")
-    println(io, "Initial distribution: $(mtbp.initial_state.distribution)")
+    println(io, "Initial distribution:")
+    initial_pdf = diff([0.0; mtbp.initial_state.distribution])
+    for j in eachindex(mtbp.initial_state.events)
+        println(io, "\t $(mtbp.initial_state.events[j]) with probability $(initial_pdf[j])")
+    end
 
     println("Progeny:")
     for i in eachindex(mtbp.progeny)

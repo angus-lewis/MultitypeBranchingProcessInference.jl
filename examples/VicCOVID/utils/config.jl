@@ -85,18 +85,15 @@ function makeloglikelihood(observations, config)
     end
 
     seirconfig = config["model"]["stateprocess"]["params"]
-    llparam_map! = (mtbpparams, param) -> begin
+    llparam_map! = (mtbpparams, R0, i) -> begin
         return param_map!(
             mtbpparams, 
             seirconfig["E_state_count"], 
             seirconfig["I_state_count"], 
-            param, 
+            (R0, seirconfig["T_E"][i], seirconfig["T_I"][i]), 
             seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"], 
         )
     end
-
-    curr_params = zeros(paramtype(model), 3)
-    nparam_per_stage = 3
 
     reset_idx = seirconfig["E_state_count"] + seirconfig["I_state_count"] + 1
     reset_obs_state_iter_setup! = (f, model, dt, observation, iteration, use_prev_iter_params) -> begin
@@ -105,11 +102,8 @@ function makeloglikelihood(observations, config)
     end
 
     loglikelihood = (pars) -> begin # function loglikelihood(pars)
-        # pre-itervention
-        curr_params[2:nparam_per_stage] .= pars[1:(nparam_per_stage-1)]
         for i in eachindex(param_seq.seq)
-            curr_params[1] = pars[i-1 + nparam_per_stage]
-            llparam_map!(param_seq[i], curr_params)
+            llparam_map!(param_seq[i], pars[i], i)
         end
         
         return logpdf!(model, param_seq, observations, approx, reset_obs_state_iter_setup!) 
@@ -131,30 +125,14 @@ function Distributions.logpdf(rw::RandomWalkGammaInitialDistR0Prior{F}, R0s::Abs
     return ll
 end
 
-function makeconstpriordists(config)
-    const_prior_dists = Any[
-        Gamma(config["inference"]["prior_parameters"]["T_E"]["shape"], 
-              config["inference"]["prior_parameters"]["T_E"]["scale"]),
-        Gamma(config["inference"]["prior_parameters"]["T_I"]["shape"], 
-              config["inference"]["prior_parameters"]["T_I"]["scale"])
-    ]
-    return tuple(const_prior_dists...)
-end
-
 function makeprior(config)
-    const_prior_dists = makeconstpriordists(config)
-
     if config["inference"]["prior_parameters"]["R_0"]["type"]=="random_walk_gamma_initial_dist"
         init_dist = Gamma(config["inference"]["prior_parameters"]["R_0"]["shape"], 
                           config["inference"]["prior_parameters"]["R_0"]["scale"])
         sigma = config["inference"]["prior_parameters"]["R_0"]["sigma"]
         R0prior = RandomWalkGammaInitialDistR0Prior(init_dist, sigma)
         prior_logpdf = (params) -> begin
-            val = zero(eltype(params))
-            for i in eachindex(const_prior_dists)
-                val += logpdf(const_prior_dists[i], params[i])
-            end
-            val += logpdf(R0prior, params[(length(const_prior_dists)+1):end])
+            val = logpdf(R0prior, params)
             return val
         end
     elseif config["inference"]["prior_parameters"]["R_0"]["type"]=="gaussian_processes"
@@ -184,14 +162,10 @@ function makeprior(config)
                 if any(p -> p <= zero(p), params)
                     return -Inf
                 end
-                val = zero(eltype(params))
-                for i in eachindex(const_prior_dists)
-                    val += logpdf(const_prior_dists[i], params[i])
+                for i in eachindex(params)
+                    cache[i] = log(params[i])
                 end
-                for i in Iterators.drop(eachindex(params), length(const_prior_dists))
-                    cache[i-length(const_prior_dists)] = log(params[i])
-                end
-                val += GP.logpdf(R0prior, cache, gpmemcache)
+                val = GP.logpdf(R0prior, cache, gpmemcache)
                 val -= sum(cache)
                 return val
             end
@@ -199,14 +173,10 @@ function makeprior(config)
             cache = zeros(Float64, length(timestamps))
             gpmemcache = GP.gp_logpdf_memcache(R0prior, cache)
             prior_logpdf = (params) -> begin
-                val = zero(eltype(params))
-                for i in eachindex(const_prior_dists)
-                    val += logpdf(const_prior_dists[i], params[i])
+                for i in eachindex(params)
+                    cache[i] = params[i]
                 end
-                for i in Iterators.drop(eachindex(params), length(const_prior_dists))
-                    cache[i-length(const_prior_dists)] = params[i]
-                end
-                val += GP.logpdf(R0prior, cache, gpmemcache)
+                val = GP.logpdf(R0prior, cache, gpmemcache)
                 return val
             end
         else

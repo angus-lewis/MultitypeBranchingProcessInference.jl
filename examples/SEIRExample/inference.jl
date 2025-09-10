@@ -50,7 +50,6 @@ function Distributions.logpdf(prior::PriorType, params)
     return prior_logpdf(params)
 end
 
-
 proposal_distribuion = makeproposal(config)
 
 mh_rng, mh_config, samples_file_io, info_file_io, model_info_file_io = makemhconfig(config)

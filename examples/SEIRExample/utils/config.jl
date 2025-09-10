@@ -14,8 +14,8 @@ function makemodel(config)
     seir = SEIR(
         seirconfig["E_state_count"], seirconfig["I_state_count"],
         first(seirconfig["infection_rate"]), 
-        first(seirconfig["exposed_stage_chage_rate"]), 
-        first(seirconfig["infectious_stage_chage_rate"]), 
+        first(seirconfig["exposed_stage_change_rate"]), 
+        first(seirconfig["infectious_stage_change_rate"]), 
         seirconfig["observation_probability"], 
         nothing, # notification rate
         seirconfig["immigration_rate"]==="nothing" ? nothing : seirconfig["immigration_rate"],
@@ -34,33 +34,15 @@ function makemodel(config)
     model = StateSpaceModel(seir, obs_model)
 
     param_seq = MTBPParamsSequence(MTBPParams{paramtype(model), Vector{paramtype(model)}}[])
-    if seirconfig["is_time_homogeneous"]
-        mtbpparams = MTBPParams(seir)
-        beta, lambda, delta = seirconfig["infection_rate"], seirconfig["infectious_stage_chage_rate"], seirconfig["exposed_stage_chage_rate"]
-        immigration = seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"]
-        param_map!(
-            mtbpparams, 
-            seirconfig["E_state_count"], seirconfig["I_state_count"], 
-            (delta, lambda, beta), immigration, false
-        )
-        push!(param_seq.seq, mtbpparams)
-    else
-        for i in eachindex(seirconfig["infection_rate"])
-            mtbpparams = MTBPParams(seir)
-            paramtimestamp = seirconfig["timestamps"][i]
-            beta = seirconfig["infection_rate"][i]
-            lambda = seirconfig["infectious_stage_chage_rate"][i]
-            delta = seirconfig["exposed_stage_chage_rate"][i]
-            immigration = seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"]
-            param_map!(
-                mtbpparams, 
-                seirconfig["E_state_count"], seirconfig["I_state_count"], 
-                (delta, lambda, beta), immigration, false
-            )
-            mtbpparams.time = paramtimestamp
-            push!(param_seq.seq, mtbpparams)
-        end
-    end
+    mtbpparams = MTBPParams(seir)
+    beta, lambda, delta = seirconfig["infection_rate"], seirconfig["infectious_stage_change_rate"], seirconfig["exposed_stage_change_rate"]
+    immigration = seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"]
+    param_map!(
+        mtbpparams, 
+        seirconfig["E_state_count"], seirconfig["I_state_count"], 
+        (delta, lambda, beta), immigration, false
+    )
+    push!(param_seq.seq, mtbpparams)
     
     return model, param_seq
 end
@@ -69,25 +51,8 @@ function makepriordists(config)
     cts_prior_dists = Any[
         Gamma(config["inference"]["prior_parameters"]["R_0"]["shape"], 
               config["inference"]["prior_parameters"]["R_0"]["scale"]),
-        Gamma(config["inference"]["prior_parameters"]["T_E"]["shape"], 
-              config["inference"]["prior_parameters"]["T_E"]["scale"]),
-        Gamma(config["inference"]["prior_parameters"]["T_I"]["shape"], 
-              config["inference"]["prior_parameters"]["T_I"]["scale"]),
     ]
     discrete_prior_dists = Any[]
-
-    if "intervention" in keys(config["inference"]["prior_parameters"])
-        push!(
-            cts_prior_dists,
-            Beta(config["inference"]["prior_parameters"]["intervention"]["effect"]["alpha"],
-                config["inference"]["prior_parameters"]["intervention"]["effect"]["beta"]),
-        )
-        push!(
-            discrete_prior_dists,
-            DiscreteUniform(config["inference"]["prior_parameters"]["intervention"]["time"]["lower"],
-                config["inference"]["prior_parameters"]["intervention"]["time"]["upper"]),
-        )
-    end
     return cts_prior_dists, discrete_prior_dists
 end
 
@@ -118,7 +83,7 @@ function makeloglikelihood(model, param_seq, observations, config)
         switch_rng = makerng(config["inference"]["likelihood_approx"]["switch"]["seed"])
         switch_threshold = config["inference"]["likelihood_approx"]["switch"]["threshold"]
         
-        randomstatesidx = 1:(getntypes(model.stateprocess) - 2)
+        randomstatesidx = 1:(getntypes(model.stateprocess) - 1) # all but cumulative cases
 
         approx = HybridFilterApproximation(
             model, pf_rng, switch_rng, nparticles, switch_threshold, randomstatesidx
@@ -148,7 +113,8 @@ function makeloglikelihood(model, param_seq, observations, config)
     function llparam_map!(mtbpparams, param)
         return param_map!(
             mtbpparams, seirconfig["E_state_count"], seirconfig["I_state_count"], 
-            param, seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"], true
+            (only(param), seirconfig["E_state_count"]/seirconfig["exposed_stage_change_rate"], seirconfig["I_state_count"]/seirconfig["infectious_stage_change_rate"]), 
+            seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"], true
         )
     end
 
@@ -158,27 +124,9 @@ function makeloglikelihood(model, param_seq, observations, config)
         return
     end
 
-    if "intervention" in keys(config["inference"]["prior_parameters"])
-        pre_intervention_params = zeros(paramtype(model), 3)
-        post_intervention_params = zeros(paramtype(model), 3)
-        loglikelihood = (pars) -> begin # function loglikelihood(pars)
-            # pre-itervention
-            pre_intervention_params .= pars[1:3]
-            llparam_map!(param_seq[1], pre_intervention_params)
-            
-            # post-itervention and intervention time
-            post_intervention_params .= pre_intervention_params
-            post_intervention_params[1] *= pars[4]
-            llparam_map!(param_seq[2], post_intervention_params)
-            param_seq[2].time = round(typeof(param_seq[2].time), pars[5])
-            
-            return logpdf!(model, param_seq, observations, approx, reset_obs_state_iter_setup!)
-        end
-    else
-        loglikelihood = (pars) -> begin # function loglikelihood(pars)
-            llparam_map!(only(param_seq), pars)
-            return logpdf!(model, param_seq, observations, approx, reset_obs_state_iter_setup!)
-        end
+    loglikelihood = (model, pars) -> begin # function loglikelihood(pars)
+        llparam_map!(only(param_seq), pars)
+        return logpdf!(model, param_seq, observations, approx, reset_obs_state_iter_setup!)
     end
     return loglikelihood
 end
