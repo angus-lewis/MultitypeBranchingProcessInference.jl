@@ -16,6 +16,9 @@ function main(args)
     println("[INFO] Loading config file at $(configfile).")
     params = YAML.load_file(configfile)
 
+    # yucky way to do this
+    params["model"]["stateprocess"]["params"]["observation_probability"] = 0.75
+    
     rng = makerng(params["simulation"]["seed"])
 
     model, param_seq = makemodel(params)

@@ -15,15 +15,16 @@ function makestateestimateplot(tstep, stateidx, config)
     model, param_seq = makemodel(config)
 
     path, t = readparticles(joinpath(@__DIR__, config["simulation"]["outfilename"]))
-    cases = pathtodailycases(path, obs_state_idx(model.stateprocess))
+    cases = pathtodailycases(path, 3)
 
     pf_rng = makerng(config["state_inference"]["pfseed"])
     nparticles = config["state_inference"]["nparticles"]
     switch_rng = makerng(config["state_inference"]["switchseed"])
     threshold = config["state_inference"]["threshold"]
 
+    randomstatesidx = 1:(getntypes(model.stateprocess) - 1) # all but cumulative cases
     hf = HybridFilterApproximation(
-        model, pf_rng, switch_rng, nparticles, threshold, getrandomstateidx(model.stateprocess),
+        model, pf_rng, switch_rng, nparticles, threshold, randomstatesidx,
     )
 
     pf = hf.pfapprox
@@ -31,47 +32,60 @@ function makestateestimateplot(tstep, stateidx, config)
 
     observations = Observations(t[1:tstep], cases[1:tstep])
     
-    # ensure seed of pf is the same at the start of every run
-    Random.seed!(pf_rng, config["state_inference"]["pfseed"])
-    
-    # compute state estimates for pf (implicit in logpdf call)
-    logpdf!(model, param_seq, observations, pf, reset_obs_state_iter_setup!)
-    
-    # get state estimates from pf and add to plot
-    pfstatesims = [p[stateidx] for p in pf.store.store]
-    xl, xr = minimum(pfstatesims)-0.5, maximum(pfstatesims)+0.5
-    histogram(pfstatesims, bins=xl:xr, normalize=:pdf, label="Particle", alpha=0.3)
+    reset_idx = getntypes(model.stateprocess)
+    reset_obs_state_iter_setup! = (f, model, dt, observation, iteration, use_prev_iter_params) -> begin
+        reset_state_iter_setup!(f, model, dt, observation, iteration, use_prev_iter_params, reset_idx)
+        return
+    end
 
+    # Gaussian 
     # compute state estimates for kf (implicit in logpdf call)
     logpdf!(model, param_seq, observations, kf, reset_obs_state_iter_setup!)
 
     # get distribution parameters for state estimates and add density to plot
     mu = kf.kalmanfilter.state_estimate[stateidx]
     sigma = sqrt(kf.kalmanfilter.state_estimate_covariance[stateidx,stateidx])
-    plot!(xl:0.05:xr, x -> pdf(Normal(mu, sigma), x), label="Gaussian")
 
+    # Hybrid
     # ensure seed of pf is the same at the start of every run
     Random.seed!(pf_rng, config["state_inference"]["pfseed"])
 
     # compute state estimates for hf (implicit in logpdf call)
     logpdf!(model, param_seq, observations, hf, reset_obs_state_iter_setup!)
     
+    # PF
+    # ensure seed of pf is the same at the start of every run
+    Random.seed!(pf_rng, config["state_inference"]["pfseed"])
+    # compute state estimates for pf (implicit in logpdf call)
+    logpdf!(model, param_seq, observations, pf, reset_obs_state_iter_setup!)
+    
+    # get state estimates from pf and add to plot
+    pfstatesims = [p[stateidx] for p in pf.store.store]
+    xl, xr = minimum(pfstatesims)-0.5, maximum(pfstatesims)+0.5
+
+    # plots 
+
     # to get state estimates we need to determine which filter was used at the last iteration
+    # Gaussian
+    plot(xl:0.05:xr, x -> pdf(Normal(mu, sigma), x), label="Gaussian", colour=cmap(1))
+    # HF
     if hf.switchparams.currfiltername == :pfapprox
         statesims = [p[stateidx] for p in pf.store.store]
-        histogram!(statesims, bins=xl:xr, normalize=:pdf, label="Hybrid (s=$threshold)", alpha=0.3)
+        histogram!(statesims, bins=xl:xr, normalize=:pdf, label="Hybrid", alpha=0.3, colour=cmap(2))
     elseif hf.switchparams.currfiltername == :kfapprox
         mu = kf.kalmanfilter.state_estimate[stateidx]
         sigma = sqrt(kf.kalmanfilter.state_estimate_covariance[stateidx,stateidx])
-        plot!(xl:0.05:xr, x -> pdf(Normal(mu, sigma), x), label="Hybrid (s=$threshold)")
+        plot!(xl:0.05:xr, x -> pdf(Normal(mu, sigma), x), label="Hybrid", colour=cmap(2))
     end
+    # PF
+    histogram!(pfstatesims, bins=xl:xr, normalize=:pdf, label="Particle", alpha=0.3, colour=cmap(3))
 
     # additional plot formatting
     yl, yh = ylims(plot!())
     # plot mean of pf
-    plot!(mean(pfstatesims)*[1;1], [yl; yh], colour=:darkblue, linewidth=3, linestyle=:dash, label=false)
+    plot!(mean(pfstatesims)*[1;1], [yl; yh], colour=cmap(3), linewidth=3, linestyle=:dash, label=false)
     # add annotation for time stamp
-    annotate!([xl+0.05*(xr-xl)], [0.9*yh], L"t=%$(t[tstep])")
+    annotate!(title=L"t=%$(t[tstep])")
     # other formatting
     plot!(ylabel=L"Probability/Density, p(z_{%$(stateidx),t}|\mathbf{y}_{1:t})", xlabel=L"z_{%$(stateidx),t}", grid=:off)
     return plot!()

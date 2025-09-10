@@ -10,16 +10,16 @@ simulation:
 model:
   stateprocess:
     params:
-      E_state_count: 1
-      I_state_count: 1
+      E_state_count: 8
+      I_state_count: 8
       is_time_homogeneous: true
-      exposed_stage_change_rate: 0.075
+      exposed_stage_change_rate: 0.6
       infection_rate: 0.06
-      infectious_stage_change_rate: 0.02142857142857143
+      infectious_stage_change_rate: 0.17142857142857143
       observation_probability: 0.75
       immigration_rate: nothing
     # [E, I, O, R]
-    initial_state: [8, 8, 0]
+    initial_state: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 0]
   observation:
     mean: [0.0]
     cov: [1.0]
@@ -28,7 +28,7 @@ inference:
   likelihood_approx:
     method: particle_filter
     switch:
-      threshold: 10
+      threshold: 1.25
       seed: 1516171819
     particle_filter:
       seed: 67890
@@ -62,10 +62,10 @@ inference:
 state_inference:
   pfseed: 2021222324
   switchseed: 2526272829
-  threshold: 10
+  threshold: 1.25
   nparticles: 4096
   tsteps: [8, 16, 31, 61, 91]
-  states: [1, 2]
+  states: [4, 12]
 
 benchmarks:
   pfseed: 2021222324

@@ -1,0 +1,1 @@
+julia --project=../../. generate_configs.jl seirconfig.yaml experiments.yaml
