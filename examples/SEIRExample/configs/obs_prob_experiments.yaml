@@ -1,9 +1,9 @@
 variation_1: 
   keys: [simulation, nsteps]
-  values: [90]
+  values: [25]
 variation_2:
   keys: [model, stateprocess, params, infection_rate]
-  values: [0.04]
+  values: [0.3]
 variation_3:
   keys: [model, stateprocess, params, observation_probability]
   values: [0.5, 0.75, 1.0]

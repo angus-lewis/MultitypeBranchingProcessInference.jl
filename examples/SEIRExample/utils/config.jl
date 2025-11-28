@@ -75,6 +75,12 @@ function makeprior(config)
     return prior_logpdf
 end
 
+struct SSMWrapper{T<:StateSpaceModel, V<:AbstractVector}
+    model::T
+    info_cache::V
+    prev_info_cache::V
+end
+
 function makeloglikelihood(model, param_seq, observations, config)
     if config["inference"]["likelihood_approx"]["method"] == "hybrid"
         pf_rng = makerng(config["inference"]["likelihood_approx"]["particle_filter"]["seed"])
@@ -119,14 +125,55 @@ function makeloglikelihood(model, param_seq, observations, config)
     end
 
     reset_idx = seirconfig["E_state_count"] + seirconfig["I_state_count"] + 1
+    ntypes = (seirconfig["E_state_count"] + seirconfig["I_state_count"] + 1)
+    n_obs = length(observations)
+
+    if approx isa MTBPKalmanFilterApproximation
+        kf_state_est_params_count = length(approx.kalmanfilter.state_estimate)+length(approx.kalmanfilter.state_estimate_covariance)
+        state_params_cache = zeros(eltype(approx.kalmanfilter.state_estimate), kf_state_est_params_count*(n_obs+1))
+    elseif approx isa ParticleFilterApproximation
+        state_params_cache = zeros(Int, ntypes*(n_obs+1))
+    else
+        state_params_cache = Float64[]
+    end
+
+    ssm = SSMWrapper(model, state_params_cache, similar(state_params_cache))
+
     reset_obs_state_iter_setup! = (f, model, dt, observation, iteration, use_prev_iter_params) -> begin
+        if f isa MTBPKalmanFilterApproximation
+            offset = (iteration-1)*kf_state_est_params_count
+            ssm.info_cache[offset .+ (1:length(f.kalmanfilter.state_estimate))] .= (
+                f.kalmanfilter.state_estimate
+            )
+            offset += length(f.kalmanfilter.state_estimate)
+            ssm.info_cache[offset .+ (1:length(f.kalmanfilter.state_estimate_covariance))] .= (
+                f.kalmanfilter.state_estimate_covariance[:]
+            )
+        elseif f isa ParticleFilterApproximation
+            offset = (iteration-1)*ntypes
+            ssm.info_cache[offset .+ (1:ntypes)] .= f.store.store[1]
+        end
         reset_state_iter_setup!(f, model, dt, observation, iteration, use_prev_iter_params, reset_idx)
         return
     end
 
-    loglikelihood = (model, pars) -> begin # function loglikelihood(pars)
+    loglikelihood = (ssm_model::SSMWrapper, pars) -> begin # function loglikelihood(pars)
         llparam_map!(only(param_seq), pars)
-        return logpdf!(model, param_seq, observations, approx, reset_obs_state_iter_setup!)
+        ll = logpdf!(ssm_model.model, param_seq, observations, approx, reset_obs_state_iter_setup!)
+        if approx isa MTBPKalmanFilterApproximation
+            offset = length(observations)*kf_state_est_params_count
+            ssm_model.info_cache[offset .+ (1:length(approx.kalmanfilter.state_estimate))] .= (
+                approx.kalmanfilter.state_estimate
+            )
+            offset += length(approx.kalmanfilter.state_estimate)
+            ssm_model.info_cache[offset .+ (1:length(approx.kalmanfilter.state_estimate_covariance))] .= (
+                approx.kalmanfilter.state_estimate_covariance[:]
+            )
+        elseif approx isa ParticleFilterApproximation
+            offset = length(observations)*(seirconfig["E_state_count"] + seirconfig["I_state_count"] + 1)
+            ssm_model.info_cache[offset .+ (1:ntypes)] .= approx.store.store[1]
+        end
+        return ll
     end
-    return loglikelihood
+    return loglikelihood, ssm
 end

@@ -9,11 +9,11 @@ end
 
 function run_jobs(jobs_list, script_name, max_jobs = 1)
     tasks = Dict()
-    total_jobs = length(jobs_list)
+    total_jobs = sum(endswith.(jobs_list, ".yaml"))
     job_count = 0
     for job_file in jobs_list
-        job_count += 1
         if endswith(job_file, ".yaml") 
+            job_count += 1
             while length(tasks) >= max_jobs
                 sleep(0.1)
                 for (job, tsk) in tasks
@@ -41,6 +41,6 @@ function run_jobs(jobs_list, script_name, max_jobs = 1)
     end
 end
 sim_jobs = readdir(argv[1])
-sim_jobs = sim_jobs[startswith.(sim_jobs, "se1i1")]
+sim_jobs = sim_jobs[startswith.(sim_jobs, "configse1i1")]
 run_jobs(sim_jobs, "simulate.jl", parse(Int, argv[2]))
 run_jobs(readdir(argv[1]), "inference.jl", parse(Int, argv[2]))

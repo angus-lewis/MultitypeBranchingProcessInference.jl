@@ -57,7 +57,7 @@ function make1dposteriorpdf(chains, paramname, prior=nothing, ymax=1.7, legend=t
     p = plot(xlabel=L"%$(string(paramname))", ylabel="Density", legend=legend)
     chainid = 1
     for (datasetname, chain) in chains
-        density!(p, chain[paramname]; label=datasetname, linestyle=smap(1), color=cmap(chainid), linewidth=2, ylims=(0,ymax), xlims=(0,3.8), bandwidth=0.04)
+        density!(p, chain[paramname]; label=datasetname, linestyle=smap(1), color=cmap(chainid), linewidth=2, ylims=(0,ymax), xlims=(0,5), bandwidth=0.04)
         chainid += 1
     end
     yl, yh = ylims(p)
@@ -69,7 +69,7 @@ function make1dposteriorpdf(chains, paramname, prior=nothing, ymax=1.7, legend=t
         chainid += 1
     end
     if prior!==nothing
-        plot!(p, x->Distributions.pdf(prior, x); label="Prior", color=cmap(chainid), linestyle=smap(1), linewidth=2)
+        plot!(p, x->Distributions.pdf(prior, x); label="Prior", color=cmap(chainid), linestyle=smap(3), linewidth=2)
     end
     return p
 end

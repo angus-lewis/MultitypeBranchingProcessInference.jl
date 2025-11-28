@@ -4,6 +4,8 @@ using LinearAlgebra
 using MultitypeBranchingProcessInference
 using Distributions
 
+import MultitypeBranchingProcessInference.MetropolisHastings.write_model_info
+
 include("./utils/config.jl")
 
 argv = ARGS
@@ -22,12 +24,10 @@ raw_observations = read_observations(joinpath(pwd(), config["inference"]["data"]
 t = config["inference"]["data"]["first_observation_time"] .+ (0:(length(raw_observations)-1))
 observations = Observations(t, raw_observations)
 
-loglikelihood = makeloglikelihood(observations, config)
-
-struct SSMWrapper end
+loglikelihood, ssm_model = makeloglikelihood(observations, config)
 
 function Distributions.logpdf(model::SSMWrapper, params)
-    return loglikelihood(params)
+    return loglikelihood(model, params)
 end
 
 prior_logpdf = makeprior(config)
@@ -40,15 +40,33 @@ end
 
 proposal_distribuion = makeproposal(config)
 
+function MultitypeBranchingProcessInference.MetropolisHastings.write_model_info(io::IO, ssm::SSMWrapper, samples_count, isacc::Bool, thin)
+    if isacc
+        # store until the next time the proposal is accepted
+        ssm.prev_info_cache .= ssm.info_cache
+    end
+    if (samples_count-1)%thin == 0
+        write(io, ssm.prev_info_cache)
+    end
+    return 
+end
+
 mh_rng, mh_config, samples_out, info_out, model_info_out = makemhconfig(config)
 
-# run mcmc
 MetropolisHastings.skip_binary_array_file_header(samples_out, 2)
+MetropolisHastings.skip_binary_array_file_header(model_info_out, 2)
+
+# run mcmc
 @time mh_nsamples, _, _ = MetropolisHastings.metropolis_hastings(
-    mh_rng, loglikelihood, prior_logpdf, proposal_distribuion, mh_config, samples_out, info_out, model_info_out
+    mh_rng, ssm_model, PriorWrapper(), proposal_distribuion, mh_config, samples_out, info_out, model_info_out
 )
 
-MetropolisHastings.write_binary_array_file_header(samples_out, (mh_config.nparams+1, mh_nsamples))
+MetropolisHastings.write_binary_array_file_header(
+    samples_out, (mh_config.nparams+1, mh_nsamples)
+)
+MetropolisHastings.write_binary_array_file_header(
+    model_info_out, (length(ssm_model.info_cache), mh_nsamples÷mh_config.model_info_thin)
+)
 
 if samples_out isa IO && samples_out !== stdout
     close(samples_out)

@@ -9,6 +9,8 @@ function makemodel(config)
         first(seirconfig["R_0"]), first(seirconfig["T_E"]), first(seirconfig["T_I"]),
         seirconfig["E_state_count"], seirconfig["I_state_count"],
     )
+    initial_states = Vector{Int}(undef, seirconfig["E_state_count"]+seirconfig["I_state_count"]+1)
+    initial_states .= config["model"]["stateprocess"]["initial_state"]
     seir = SEIR(
         seirconfig["E_state_count"], 
         seirconfig["I_state_count"],
@@ -18,7 +20,7 @@ function makemodel(config)
         seirconfig["observation_probability"], 
         nothing, # notification rate
         seirconfig["immigration_rate"]=="nothing" ? nothing : seirconfig["immigration_rate"],
-        config["model"]["stateprocess"]["initial_state"],
+        initial_states,
     )
 
     obs_config = config["model"]["observation"]
@@ -70,6 +72,12 @@ function makemodel(config)
     return model, param_seq
 end
 
+struct SSMWrapper{T<:StateSpaceModel, V<:AbstractVector}
+    model::T
+    info_cache::V
+    prev_info_cache::V
+end
+
 function makeloglikelihood(observations, config)
     model, param_seq = makemodel(config)
     if config["inference"]["likelihood_approx"]["method"] == "kalman_filter"
@@ -95,21 +103,71 @@ function makeloglikelihood(observations, config)
         )
     end
 
+    nstates = seirconfig["E_state_count"] + seirconfig["I_state_count"] + 1 # add one for obs state
+    n_obs = length(observations)
+
+    if approx isa MTBPKalmanFilterApproximation
+        kf_state_est_params_count = length(approx.kalmanfilter.state_estimate)+length(approx.kalmanfilter.state_estimate_covariance)
+        state_params_cache = zeros(eltype(approx.kalmanfilter.state_estimate), kf_state_est_params_count*(n_obs+1))
+    else
+        error()
+    end
+
+    ssm = SSMWrapper(model, state_params_cache, similar(state_params_cache))
+
     reset_idx = seirconfig["E_state_count"] + seirconfig["I_state_count"] + 1
     reset_obs_state_iter_setup! = (f, model, dt, observation, iteration, use_prev_iter_params) -> begin
+        offset = (iteration-1)*kf_state_est_params_count
+        ssm.info_cache[offset .+ (1:length(f.kalmanfilter.state_estimate))] .= (
+            f.kalmanfilter.state_estimate
+        )
+        offset += length(f.kalmanfilter.state_estimate)
+        ssm.info_cache[offset .+ (1:length(f.kalmanfilter.state_estimate_covariance))] .= (
+            f.kalmanfilter.state_estimate_covariance[:]
+        )
         reset_state_iter_setup!(f, model, dt, observation, iteration, use_prev_iter_params, reset_idx)
         return
     end
 
-    loglikelihood = (pars) -> begin # function loglikelihood(pars)
+    loglikelihood = (ssm_model, pars) -> begin # function loglikelihood(pars)
         for i in eachindex(param_seq.seq)
             llparam_map!(param_seq[i], pars[i], i)
         end
+        # discretise the intial state
+        i = length(param_seq.seq)
+        z0 = round.(eltype(ssm_model.model.stateprocess.initial_state.events[1]), pars[(i+1):end])
+        if any(z0 .< 0) || all(z0 .== 0)
+            return -Inf
+        end
+        # set initial state of model
+        initial_state = only(ssm_model.model.stateprocess.initial_state.events)
+        initial_state[1:(nstates-1)] .= z0
+        # set moments of intial state
+        MultitypeBranchingProcesses.firstmoment!(
+            ssm_model.model.stateprocess.initial_state.first_moments, 
+            ssm_model.model.stateprocess.initial_state.events,
+            ssm_model.model.stateprocess.initial_state.distribution
+        )
+        MultitypeBranchingProcesses.secondmoment!(
+            ssm_model.model.stateprocess.initial_state.second_moments,
+            ssm_model.model.stateprocess.initial_state.events,
+            ssm_model.model.stateprocess.initial_state.distribution
+        )
+        ll = logpdf!(ssm_model.model, param_seq, observations, approx, reset_obs_state_iter_setup!) 
         
-        return logpdf!(model, param_seq, observations, approx, reset_obs_state_iter_setup!) 
+        offset = n_obs*kf_state_est_params_count
+        ssm_model.info_cache[offset .+ (1:length(approx.kalmanfilter.state_estimate))] .= (
+            approx.kalmanfilter.state_estimate
+        )
+        offset += length(approx.kalmanfilter.state_estimate)
+        ssm_model.info_cache[offset .+ (1:length(approx.kalmanfilter.state_estimate_covariance))] .= (
+            approx.kalmanfilter.state_estimate_covariance[:]
+        )
+        
+        return ll
     end
 
-    return loglikelihood
+    return loglikelihood, ssm
 end
 
 struct RandomWalkGammaInitialDistR0Prior{F}
@@ -126,6 +184,10 @@ function Distributions.logpdf(rw::RandomWalkGammaInitialDistR0Prior{F}, R0s::Abs
 end
 
 function makeprior(config)
+    z0_mu = config["inference"]["prior_parameters"]["initial_state"]["mu"]
+    z0_cov = config["inference"]["prior_parameters"]["initial_state"]["cov"]
+    z0_cov = reshape(z0_cov, length(z0_mu), length(z0_mu))
+    z0_prior = MvNormal(z0_mu, z0_cov)
     if config["inference"]["prior_parameters"]["R_0"]["type"]=="random_walk_gamma_initial_dist"
         init_dist = Gamma(config["inference"]["prior_parameters"]["R_0"]["shape"], 
                           config["inference"]["prior_parameters"]["R_0"]["scale"])
@@ -162,21 +224,25 @@ function makeprior(config)
                 if any(p -> p <= zero(p), params)
                     return -Inf
                 end
-                for i in eachindex(params)
+                for i in eachindex(cache)
                     cache[i] = log(params[i])
                 end
                 val = GP.logpdf(R0prior, cache, gpmemcache)
                 val -= sum(cache)
+                i = length(cache)
+                val += logpdf(z0_prior, params[(i+1):end])
                 return val
             end
         elseif config["inference"]["prior_parameters"]["R_0"]["transform"]=="none"
             cache = zeros(Float64, length(timestamps))
             gpmemcache = GP.gp_logpdf_memcache(R0prior, cache)
             prior_logpdf = (params) -> begin
-                for i in eachindex(params)
+                for i in eachindex(cache)
                     cache[i] = params[i]
                 end
                 val = GP.logpdf(R0prior, cache, gpmemcache)
+                i = length(cache)
+                val += logpdf(z0_prior, params[(i+1):end])
                 return val
             end
         else

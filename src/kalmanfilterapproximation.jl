@@ -62,7 +62,6 @@ function iterate!(
     customitersetup=nothing,
 ) where {S<:MultitypeBranchingProcess, O<:LinearGaussianObservationModel} 
     itersetup!(f, ssm, dt, observation, iteration, use_prev_iter_params, customitersetup)
-
     kf = f.kalmanfilter
 
     predict!(kf)

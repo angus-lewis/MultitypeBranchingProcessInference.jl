@@ -5,6 +5,8 @@ using LaTeXStrings
 using MultitypeBranchingProcessInference
 using LinearAlgebra
 
+const PLOTTIMES = [5; 15; 25]
+
 default(; fontfamily="Bookman")
 
 function readparticles(fn)
@@ -56,6 +58,7 @@ function makeplot(particles, mtbp)
 
     series = zeros(eltype(particles[0]), length(particles), mtbp.ntypes+1)
     sorted_keys = sort(collect(keys(particles)))
+    
     plot()
     plot!([NaN], [NaN]; color=:grey, alpha=0.5, label = "Sample paths")
     for sampleidx in 1:size(particles[0], 1)
@@ -69,14 +72,15 @@ function makeplot(particles, mtbp)
     end
     plot!(xlabel="Exposed", ylabel="Infectious")
     
-    scattertimes = [20; 60; 100]
+    scattertimes = PLOTTIMES
     pastel_blue = RGB(0.7, 0.8, 1.0)
     pastel_green = RGB(0.7, 1.0, 0.7)
     pastel_red = RGB(1.0, 0.7, 0.7)
     colours = [pastel_blue, pastel_green, pastel_red]
+    markers = [:diamond, :utriangle, :circle]
     i = 1
     for t in scattertimes
-        scatter!(particles[t][:,1], particles[t][:,2], color=colours[i], label="t=$t", markersize=3)
+        scatter!(particles[t][:,1], particles[t][:,2], color=colours[i], label="t=$t", markersize=3, marker=markers[i])
         i += 1
     end
     i = 1
@@ -85,7 +89,7 @@ function makeplot(particles, mtbp)
         mu = mean(moments, mtbp.state)
         sigma = variance_covariance(moments, mtbp.state)
         # covellipse!(mu[1:2], sigma[1:2,1:2]; n_std = 1, color=:lightblue, label=nothing, alpha=0.4)
-        covellipse!(mu[1:2], sigma[1:2,1:2]; n_std = 2, color=colours[i], label=nothing, alpha=0.4)
+        covellipse!(mu[1:2], sigma[1:2,1:2]; n_std = 1, color=colours[i], label=nothing, alpha=0.4)
         i += 1
     end
 
@@ -105,7 +109,7 @@ function makeplot(particles, mtbp)
     end
     plot!(mu_series[:,2], mu_series[:,3], color=:black, label=L"E[z(t)]", linewidth=2)
     
-    return plot!(grid=nothing)
+    return plot!(grid=nothing)#, xscale=:log10, yscale=:log10, xlims=(0.9, 200), ylims=(0.9,330))
 end
 samplepathplot = makeplot(particles, mtbp)
 savefig(samplepathplot, joinpath("figs", "SEIRToyModelSamplePathPlot.pdf"))
@@ -114,7 +118,7 @@ function makeqq(particles, mtbp)
     moments = MTBPMomentsOperator(mtbp)
     init!(mtbp)
     plots = Plots.Plot[]
-    for t in [20, 60, 100]
+    for t in PLOTTIMES
         StateSpaceModels.moments!(moments, mtbp, t)
         mu = zeros(paramtype(mtbp), getntypes(mtbp))
         mean!(mu, moments, mtbp.state)
@@ -147,15 +151,15 @@ function makets(particles, mtbp)
         series[count, 2:end] = particles[t][:,end]
     end
     pastel_red = RGB(1.0, 0.7, 0.7)
-    p1 = plot(series[2:end,1], diff(series[:,2:end], dims=1); xlabel=L"Time", ylabel=L"New"*" "*L"cases:"*" "*L"z_3(t)-z_3(t-1)", label=false, color=:grey, alpha=0.3, legend=:topleft, grid=nothing)
-    p1 = scatter!(p1, series[2:end,1], diff(series[:,2], dims=1); label=L"Sample"*" "*L"path", color=:grey)
+    p1 = plot(series[2:end,1], diff(series[:,2:end], dims=1); xlabel=L"\mbox{Time}", ylabel=L"\mbox{New cases: }"*" "*L"z_3(t)-z_3(t-1)", label=false, color=:grey, alpha=0.3, legend=:topleft, grid=nothing)
+    p1 = scatter!(p1, series[2:end,1], diff(series[:,2], dims=1); label=L"\mbox{Sample path}", color=:grey)
 
     mu_series = zeros(length(particles), mtbp.ntypes+1)
     sigma_series = zeros(length(particles), mtbp.ntypes+1)
     count = 0
     t0 = first(sorted_keys)
     for t in sorted_keys
-        count += 1
+        count += 1 
 
         moments!(moments, mtbp, t)
         mu = zeros(paramtype(mtbp), getntypes(mtbp))

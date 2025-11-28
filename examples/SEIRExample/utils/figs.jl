@@ -4,6 +4,7 @@ default(; fontfamily="Bookman", size=(400,300), legendfontsize=10, guidefontsize
 const _pastel_blue = RGB(0.4, 0.5, 0.8)
 const _pastel_green = RGB(0.4, 0.8, 0.4)
 const _pastel_red = RGB(0.8, 0.4, 0.4)
+const _gray = RGB(0.5, 0.5, 0.5)
 
 const COLOUR_MAP = Dict(
     1 => _pastel_blue,

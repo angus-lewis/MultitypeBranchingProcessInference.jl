@@ -7,7 +7,11 @@ end
 
 function makemhconfig(config)
     mh_rng = makerng(config["inference"]["mh_config"]["seed"])
-    model_info_file = if "model_info_filename" in keys(config["inference"]["mh_config"])
+    model_info_file = if (
+            "model_info_filename" in keys(config["inference"]["mh_config"]) 
+            && config["inference"]["mh_config"]["model_info_filename"] !== "nothing"
+        )
+
         open(config["inference"]["mh_config"]["model_info_filename"], "w")
     else
         devnull

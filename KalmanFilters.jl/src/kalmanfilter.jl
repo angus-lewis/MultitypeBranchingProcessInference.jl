@@ -249,8 +249,7 @@ function update!(kf::KalmanFilter, obs::AbstractVector, returnloglikelihood=true
     mul!(@view(kf._obs_cache[:,1]), kf.observation_model, kf.predicted_state)
     # z(k) - Hx̂(k|k-1)
     kf._residual .= obs
-    kf._residual .-= kf._obs_cache[:,1]
-
+    @views kf._residual .-= kf._obs_cache[:,1]
     # S(k) = HP(k|k-1)H' + R
     # HP(k|k-1)
     mul!(kf._obs_cache, kf.observation_model, kf.predicted_state_covariance)
@@ -335,7 +334,6 @@ function predict!(kf::KalmanFilter)
 
     # x̂(k|k-1) = Fx̂(k|k-1)
     mul!(kf.predicted_state, kf.state_transition_model, kf.state_estimate)
-
     # P(k|k-1) = FP(k-1|k-1)F' + Q
     # FP(k-1|k-1)
     mul!(kf._state_cache, kf.state_transition_model, kf.state_estimate_covariance)

@@ -13,13 +13,13 @@ model:
       E_state_count: 8
       I_state_count: 8
       is_time_homogeneous: true
-      exposed_stage_change_rate: 0.6
-      infection_rate: 0.06
-      infectious_stage_change_rate: 0.17142857142857143
+      exposed_stage_change_rate: 3.0
+      infection_rate: 0.3
+      infectious_stage_change_rate: 0.8571428571428571
       observation_probability: 0.75
       immigration_rate: nothing
     # [E, I, O, R]
-    initial_state: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 0]
+    initial_state: [1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0, 0]
   observation:
     mean: [0.0]
     cov: [1.0]
@@ -52,6 +52,7 @@ inference:
     init_sample: [2.8]
     verbose: true
     infofilename: data/test_samples.info.txt
+    model_info_filename: data/test_samples.model_info.f64_array.bin
     adaptive: true
     nadapt: 20480
     adapt_cov_scale: 8.0

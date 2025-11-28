@@ -22,6 +22,11 @@ function generate_configs!(master_config, experiments,
         master_config["simulation"]["outfilename"] = joinpath("data", "$(simname).Int64.bin")
         master_config["inference"]["mh_config"]["outfilename"] = joinpath("data", "samples$(name).f64_array.bin")
         master_config["inference"]["mh_config"]["infofilename"] = joinpath("data", "info$(name).txt")
+        if occursin("kalman", name) || occursin("particle", name)
+            master_config["inference"]["mh_config"]["model_info_filename"] = joinpath("data", "model_info$(name).f64_array.bin")
+        else
+            master_config["inference"]["mh_config"]["model_info_filename"] = "nothing"
+        end
         YAML.write_file(joinpath(pwd(), "experiments", "config$(name).yaml"), master_config)
         return 
     end
