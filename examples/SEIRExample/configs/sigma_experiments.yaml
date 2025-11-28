@@ -1,0 +1,15 @@
+variation_1: 
+  keys: [simulation, nsteps]
+  values: [25]
+variation_2:
+  keys: [model, stateprocess, params, infection_rate]
+  values: [0.3]
+variation_3:
+  keys: [model, stateprocess, params, observation_probability]
+  values: [0.75]
+variation_4:
+  keys: [inference, likelihood_approx, method]
+  values: [particle_filter, hybrid, kalman_filter]
+variation_5:
+  keys: [model, observation, cov]
+  values: [[0.25], [1.0], [4.0]]

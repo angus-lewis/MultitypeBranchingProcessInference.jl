@@ -1,11 +1,16 @@
 const FIGURE_FILE_EXT = "pdf"
-default(; fontfamily="Bookman")
+default(; fontfamily="Bookman", size=(400,300), legendfontsize=10, guidefontsize=12, tickfontsize=10, titlefontsize=14, grid=false)
+
+const _pastel_blue = RGB(0.4, 0.5, 0.8)
+const _pastel_green = RGB(0.4, 0.8, 0.4)
+const _pastel_red = RGB(0.8, 0.4, 0.4)
+const _gray = RGB(0.5, 0.5, 0.5)
 
 const COLOUR_MAP = Dict(
-    1 => :grey,
-    2 => :blue,
-    3 => :red,
-    4 => :green,
+    1 => _pastel_blue,
+    2 => _pastel_green,
+    3 => _pastel_red,
+    4 => :grey,
     5 => :purple,
     6 => :magenta,
 )
